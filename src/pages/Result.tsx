@@ -36,9 +36,16 @@ export default function Result({ record: initial, onBack, onSaved }: Props) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [copiedKey, setCopiedKey] = useState('')
+  // 保存後に編集・再生成されたら未保存扱いに戻す。初回（新規生成）は未保存。
+  const [dirty, setDirty] = useState(!initial.id)
   const [toast, showToast] = useToast()
 
   const type = record.type
+
+  const guardedBack = () => {
+    if (dirty && !confirm('保存していません。破棄してこの画面を閉じますか？')) return
+    onBack()
+  }
 
   const fields =
     type === 'soap'
@@ -48,6 +55,7 @@ export default function Result({ record: initial, onBack, onSaved }: Props) {
         : REPORT_LABELS.map(({ key, label }) => ({ key: key as string, label, value: record.report?.[key] ?? '' }))
 
   const updateField = (key: string, value: string) => {
+    setDirty(true)
     setRecord((r) => {
       if (r.type === 'soap') return { ...r, soap: { ...(r.soap as SoapResult), [key]: value } }
       if (r.type === 'plan') return { ...r, plan: { ...(r.plan as PlanResult), [key]: value } }
@@ -75,6 +83,7 @@ export default function Result({ record: initial, onBack, onSaved }: Props) {
   }
 
   const regenerate = async () => {
+    if (!confirm('今の文章を破棄してAIで作り直しますか？（編集内容は消えます）')) return
     setError('')
     setLoading(true)
     try {
@@ -88,6 +97,7 @@ export default function Result({ record: initial, onBack, onSaved }: Props) {
         const report = await generateReport(record.memo)
         setRecord((r) => ({ ...r, report }))
       }
+      setDirty(true)
       showToast('作り直しました')
     } catch (e) {
       setError(e instanceof Error ? e.message : 'エラーが発生しました。')
@@ -105,13 +115,14 @@ export default function Result({ record: initial, onBack, onSaved }: Props) {
       doc.id = await db.records.add(doc)
     }
     setRecord(doc)
+    setDirty(false)
     showToast('保存しました')
     setTimeout(onSaved, 600)
   }
 
   return (
     <>
-      <Header title={`${DOC_META[type].short}の下書き`} onBack={onBack} />
+      <Header title={`${DOC_META[type].short}の下書き`} onBack={guardedBack} />
       <div className="page">
         <div className="meta-line">
           <span className={`badge ${DOC_META[type].badgeClass}`}>{DOC_META[type].short}</span>

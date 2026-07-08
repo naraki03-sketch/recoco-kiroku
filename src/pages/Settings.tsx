@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
+import { exportBackup, importBackup } from '../lib/backup'
 import { testConnection } from '../lib/gemini'
 import { getApiKey, getModel, getProvider, isGemmaModel, MODEL_GROUPS, setApiKey, setModel } from '../lib/settings'
 import { Header, useToast } from '../components/ui'
@@ -10,6 +11,8 @@ export default function Settings({ onBack }: { onBack: () => void }) {
   const [showKey, setShowKey] = useState(false)
   const [testing, setTesting] = useState(false)
   const [testResult, setTestResult] = useState<{ ok: boolean; msg: string } | null>(null)
+  const [backupBusy, setBackupBusy] = useState(false)
+  const fileRef = useRef<HTMLInputElement>(null)
   const [toast, showToast] = useToast()
 
   const provider = getProvider(model)
@@ -27,6 +30,34 @@ export default function Settings({ onBack }: { onBack: () => void }) {
     persist()
     setTestResult(null)
     showToast('設定を保存しました')
+  }
+
+  const doExport = async () => {
+    setBackupBusy(true)
+    try {
+      await exportBackup()
+      showToast('バックアップを書き出しました')
+    } catch {
+      showToast('書き出しに失敗しました')
+    } finally {
+      setBackupBusy(false)
+    }
+  }
+
+  const onPickFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    e.target.value = '' // 同じファイルを続けて選べるようにリセット
+    if (!file) return
+    setBackupBusy(true)
+    try {
+      const text = await file.text()
+      const res = await importBackup(text)
+      showToast(`取り込みました（利用者${res.patients}件・記録${res.records}件を追加）`)
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : '取り込みに失敗しました')
+    } finally {
+      setBackupBusy(false)
+    }
   }
 
   const runTest = async () => {
@@ -119,6 +150,36 @@ export default function Settings({ onBack }: { onBack: () => void }) {
         <button className="btn btn-secondary" onClick={runTest} disabled={testing || !currentKey.trim()}>
           {testing ? '接続テスト中…' : '接続テスト'}
         </button>
+
+        <div className="card">
+          <label className="label">データのバックアップ</label>
+          <p className="hint" style={{ marginTop: 0 }}>
+            記録データはこの端末の中だけに保存されています。機種変更・ブラウザのデータ削除・端末の故障で
+            すべて消えることがあります。ときどき書き出して安全な場所に保管してください。
+          </p>
+          <button className="btn btn-secondary" style={{ marginTop: 10 }} onClick={doExport} disabled={backupBusy}>
+            バックアップを書き出す
+          </button>
+          <button
+            className="btn btn-secondary"
+            style={{ marginTop: 10 }}
+            onClick={() => fileRef.current?.click()}
+            disabled={backupBusy}
+          >
+            バックアップから復元する
+          </button>
+          <input
+            ref={fileRef}
+            type="file"
+            accept="application/json,.json"
+            onChange={onPickFile}
+            style={{ display: 'none' }}
+          />
+          <p className="hint">
+            復元は既存のデータを消さずに追加します（同じ利用者名はまとめられます）。
+            書き出したファイルには利用者名と記録が含まれます。取り扱いにご注意ください。
+          </p>
+        </div>
 
         <div className="notice">
           <strong>個人情報についての注意</strong>

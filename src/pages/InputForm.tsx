@@ -1,10 +1,11 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { db } from '../lib/db'
+import { clearDraft, loadDraft, saveDraft } from '../lib/draft'
 import { generatePlan, generateReport, generateSoap } from '../lib/prompts'
 import { getActiveApiKey } from '../lib/settings'
 import type { Patient, RecordDoc, RecordType, Vitals } from '../lib/types'
 import { emptyVitals } from '../lib/types'
-import { Header, today } from '../components/ui'
+import { formatDateJa, Header, today } from '../components/ui'
 
 const TITLES: Record<RecordType, string> = {
   soap: '訪問看護記録（SOAP）',
@@ -42,10 +43,46 @@ export default function InputForm({ type, onBack, onGenerated, goSettings }: Pro
   const [memo, setMemo] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [restoredAt, setRestoredAt] = useState<number | null>(null)
+  // 初回マウント時の下書き復元が終わるまで自動保存を止めるためのフラグ
+  const restoredRef = useRef(false)
 
   useEffect(() => {
     db.patients.orderBy('name').toArray().then(setPatients)
   }, [])
+
+  // 保存済みの下書きがあれば初回に復元する（書類タイプごと）
+  useEffect(() => {
+    const draft = loadDraft(type)
+    if (draft) {
+      setPatientId(draft.patientId)
+      setVisitDate(draft.visitDate || today())
+      setVitals(draft.vitals ?? emptyVitals)
+      setMemo(draft.memo)
+      setRestoredAt(draft.savedAt)
+    }
+    restoredRef.current = true
+    // typeは画面遷移で固定のため依存に含めない
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // 入力内容を下書きとして自動保存（debounce）
+  useEffect(() => {
+    if (!restoredRef.current) return
+    const t = window.setTimeout(() => {
+      saveDraft(type, { patientId, visitDate, vitals, memo })
+    }, 400)
+    return () => window.clearTimeout(t)
+  }, [type, patientId, visitDate, vitals, memo])
+
+  const clearForm = () => {
+    setPatientId('')
+    setVisitDate(today())
+    setVitals(emptyVitals)
+    setMemo('')
+    setRestoredAt(null)
+    clearDraft(type)
+  }
 
   const addPatient = async () => {
     const name = newPatientName.trim()
@@ -86,12 +123,15 @@ export default function InputForm({ type, onBack, onGenerated, goSettings }: Pro
       }
       if (type === 'soap') {
         const soap = await generateSoap(memo, vitals)
+        clearDraft(type)
         onGenerated({ ...base, vitals, soap })
       } else if (type === 'plan') {
         const plan = await generatePlan(memo)
+        clearDraft(type)
         onGenerated({ ...base, plan })
       } else {
         const report = await generateReport(memo)
+        clearDraft(type)
         onGenerated({ ...base, report })
       }
     } catch (e) {
@@ -105,6 +145,17 @@ export default function InputForm({ type, onBack, onGenerated, goSettings }: Pro
     <>
       <Header title={TITLES[type]} onBack={onBack} />
       <div className="page">
+        {restoredAt && (
+          <div className="restore-note">
+            <span>
+              前回入力していた内容を復元しました（{formatDateJa(new Date(restoredAt).toISOString().slice(0, 10))}保存）
+            </span>
+            <button className="btn-small" onClick={clearForm}>
+              入力をクリア
+            </button>
+          </div>
+        )}
+
         <div className="card">
           <label className="label">利用者</label>
           {addingPatient ? (
