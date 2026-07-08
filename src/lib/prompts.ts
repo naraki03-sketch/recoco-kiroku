@@ -1,5 +1,5 @@
 import { formatDateJa } from '../components/ui'
-import { generateJson } from './gemini'
+import { generateJson } from './ai'
 import type { PlanResult, ReportResult, SoapResult, Vitals } from './types'
 import { vitalsToText } from './types'
 

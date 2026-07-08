@@ -1,14 +1,31 @@
 import { useRef, useState } from 'react'
 import PatientManager from '../components/PatientManager'
 import { exportBackup, importBackup } from '../lib/backup'
-import { testConnection } from '../lib/gemini'
-import { getApiKey, getModel, getProvider, isGemmaModel, MODEL_GROUPS, setApiKey, setModel } from '../lib/settings'
+import { testConnection } from '../lib/ai'
+import {
+  getApiKey,
+  getCustomModelId,
+  getModel,
+  getProviderMeta,
+  isGemmaModel,
+  MODEL_GROUPS,
+  PROVIDERS,
+  setApiKey,
+  setCustomModelId,
+  setModel,
+  type Provider
+} from '../lib/settings'
 import { Header, useToast } from '../components/ui'
 
+const ALL_PROVIDERS = Object.keys(PROVIDERS) as Provider[]
+
 export default function Settings({ onBack }: { onBack: () => void }) {
-  const [googleKey, setGoogleKey] = useState(getApiKey('google'))
-  const [claudeKey, setClaudeKey] = useState(getApiKey('anthropic'))
+  // 全提供元のキーをまとめて保持（提供元を切り替えても入力済みキーを失わない）
+  const [keys, setKeys] = useState<Record<Provider, string>>(() =>
+    Object.fromEntries(ALL_PROVIDERS.map((p) => [p, getApiKey(p)])) as Record<Provider, string>
+  )
   const [model, setModelState] = useState(getModel())
+  const [customId, setCustomId] = useState(getCustomModelId())
   const [showKey, setShowKey] = useState(false)
   const [testing, setTesting] = useState(false)
   const [testResult, setTestResult] = useState<{ ok: boolean; msg: string } | null>(null)
@@ -16,15 +33,15 @@ export default function Settings({ onBack }: { onBack: () => void }) {
   const fileRef = useRef<HTMLInputElement>(null)
   const [toast, showToast] = useToast()
 
-  const provider = getProvider(model)
-  const isClaude = provider === 'anthropic'
-  const currentKey = isClaude ? claudeKey : googleKey
-  const setCurrentKey = isClaude ? setClaudeKey : setGoogleKey
+  // カスタムモデルIDがあればそれ、なければ選択中モデルの提供元メタを使う
+  const meta = getProviderMeta(customId.trim() || model)
+  const currentKey = keys[meta.id]
+  const setCurrentKey = (v: string) => setKeys((k) => ({ ...k, [meta.id]: v }))
 
   const persist = () => {
-    setApiKey('google', googleKey)
-    setApiKey('anthropic', claudeKey)
+    for (const p of ALL_PROVIDERS) setApiKey(p, keys[p])
     setModel(model)
+    setCustomModelId(customId)
   }
 
   const save = () => {
@@ -92,25 +109,23 @@ export default function Settings({ onBack }: { onBack: () => void }) {
               </optgroup>
             ))}
           </select>
-          {isGemmaModel(model) && (
+          {isGemmaModel(model) && !customId.trim() && (
             <p className="hint">
               Gemmaは軽量なオープンモデルです。Geminiと同じAPIキーで使えますが、
               文章の質はGeminiより落ちる場合があります。選んだら一度「接続テスト」で動作を確認してください。
             </p>
           )}
-          {isClaude && (
-            <p className="hint">
-              Claudeは高品質ですが、無料枠がなく利用に応じた料金がかかります（Anthropicのアカウントとクレジットが必要）。
-            </p>
-          )}
+          <p className="hint">
+            選択中の提供元: <strong>{meta.label}</strong>
+          </p>
 
           <label className="label" style={{ marginTop: 12 }}>
-            {isClaude ? 'Claude（Anthropic）APIキー' : 'Gemini / Gemma APIキー'}
+            {meta.label}のAPIキー
           </label>
           <div className="patient-row">
             <input
               type={showKey ? 'text' : 'password'}
-              placeholder={isClaude ? 'sk-ant-...' : 'AIza...'}
+              placeholder={meta.keyPlaceholder}
               value={currentKey}
               onChange={(e) => setCurrentKey(e.target.value)}
               autoComplete="off"
@@ -119,24 +134,30 @@ export default function Settings({ onBack }: { onBack: () => void }) {
               {showKey ? '隠す' : '表示'}
             </button>
           </div>
-          {isClaude ? (
-            <p className="hint">
-              APIキーは{' '}
-              <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noreferrer">
-                Anthropic Console
-              </a>{' '}
-              で取得できます（ログイン →「Create Key」）。キーはこの端末の中にだけ保存されます。
+          <p className="hint">
+            APIキーは{' '}
+            <a href={meta.consoleUrl} target="_blank" rel="noreferrer">
+              {meta.consoleName}
+            </a>{' '}
+            で取得できます。キーはこの端末の中にだけ保存されます（提供元ごとに別々に保存されます）。
+          </p>
+
+          <details className="advanced">
+            <summary>詳細設定（カスタムモデルID）</summary>
+            <p className="hint" style={{ marginTop: 8 }}>
+              一覧にない新しいモデルを使う場合、モデルIDを直接入力できます（上の選択より優先されます）。
+              提供元は上で選んだモデルの提供元（{meta.label}）宛てに送られます。OpenRouterのモデルは
+              「provider/model」形式のIDです。空欄にすると一覧の選択に戻ります。
             </p>
-          ) : (
-            <p className="hint">
-              APIキーは{' '}
-              <a href="https://aistudio.google.com/apikey" target="_blank" rel="noreferrer">
-                Google AI Studio
-              </a>{' '}
-              で無料で取得できます（Googleアカウントでログイン →「APIキーを作成」）。
-              キーはこの端末の中にだけ保存されます。
-            </p>
-          )}
+            <input
+              type="text"
+              placeholder="例: openai/gpt-5.1 / gemini-2.5-flash など"
+              value={customId}
+              onChange={(e) => setCustomId(e.target.value)}
+              autoComplete="off"
+              style={{ marginTop: 8 }}
+            />
+          </details>
         </div>
 
         {testResult && (
@@ -187,14 +208,12 @@ export default function Settings({ onBack }: { onBack: () => void }) {
         <div className="notice">
           <strong>個人情報についての注意</strong>
           <br />
-          ・メモの内容はAI（{isClaude ? 'Anthropic Claude' : 'Google Gemini / Gemma'}）に送信されます。
+          ・メモの内容はAI（{meta.label}）に送信されます。
           <strong>利用者の氏名・住所・電話番号はメモに入れない</strong>でください（「Aさん」「本人」などでOK）。
           <br />
           ・アプリで選択する利用者名はAIには送信されず、この端末の中にだけ保存されます。
           <br />
-          {isClaude
-            ? '・Anthropic APIは、既定では送信内容をモデルの学習に利用しません。'
-            : '・Gemini / Gemma APIの無料枠では、送信内容がGoogleのサービス改善に利用される場合があります。'}
+          ・{meta.privacyNote}
         </div>
       </div>
       {toast}

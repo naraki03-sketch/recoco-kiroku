@@ -533,6 +533,20 @@ details.memo-view textarea {
   color: var(--danger);
 }
 
+/* ---------- 詳細設定 ---------- */
+details.advanced {
+  margin-top: 12px;
+  border-top: 1px solid var(--border);
+  padding-top: 10px;
+}
+
+details.advanced summary {
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-sub);
+}
+
 a {
   color: var(--teal);
 }
