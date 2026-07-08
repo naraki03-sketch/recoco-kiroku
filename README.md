@@ -33,8 +33,22 @@ npm run build    # 本番ビルド（dist/ に出力）
 
 技術構成: Vite + React + TypeScript / Dexie (IndexedDB) / vite-plugin-pwa / Gemini API
 
-## スマホで使うには（デプロイ）
+## スマホで使う（公開URL）
 
-`dist/` フォルダを静的ホスティング（Vercel・Netlify・GitHub Pages など）に公開し、
-スマホのブラウザで開いて「ホーム画面に追加」するとアプリのように使えます。
-（PWAのためHTTPSが必須。ローカルの `npm run dev` はPC確認用）
+GitHub Pages で公開済み。スマホのブラウザで下記を開き「ホーム画面に追加」するとアプリのように使えます。
+
+**https://naraki03-sketch.github.io/recoco-kiroku/**
+
+- iPhone(Safari): 共有ボタン → 「ホーム画面に追加」
+- Android(Chrome): メニュー(⋮) → 「ホーム画面に追加」/「アプリをインストール」
+
+### 更新方法（コードを直したとき）
+
+```bash
+git push            # ソースをGitHubへ
+npm run deploy      # ビルドして gh-pages ブランチへ公開（数十秒で反映）
+```
+
+`npm run deploy` は `dist/` をビルドして gh-pages ブランチに上げる。GitHub Pages の配信元は
+gh-pages ブランチ。`vite.config.ts` の `base: '/recoco-kiroku/'` はリポジトリ名に対応（独自ドメインや
+Vercelに移す場合は `'/'` に戻す）。ローカルの `npm run dev` はPC確認用。
