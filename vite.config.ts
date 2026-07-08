@@ -2,7 +2,10 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
 
+// GitHub Pages のプロジェクトサイト（https://<user>.github.io/recoco-kiroku/）で
+// 配信するため、ベースパスをリポジトリ名に合わせる。独自ドメインやVercelに移す場合は '/' に戻す。
 export default defineConfig({
+  base: '/recoco-kiroku/',
   plugins: [
     react(),
     VitePWA({
