@@ -1,0 +1,78 @@
+export interface Patient {
+  id?: number
+  name: string
+  createdAt: number
+}
+
+export interface Vitals {
+  temp: string // 体温
+  bpHigh: string // 収縮期血圧
+  bpLow: string // 拡張期血圧
+  pulse: string // 脈拍
+  spo2: string // SpO2
+  resp: string // 呼吸数
+}
+
+export const emptyVitals: Vitals = {
+  temp: '',
+  bpHigh: '',
+  bpLow: '',
+  pulse: '',
+  spo2: '',
+  resp: ''
+}
+
+export interface SoapResult {
+  s: string
+  o: string
+  a: string
+  p: string
+}
+
+export interface PlanResult {
+  goal: string // 看護・リハビリテーションの目標
+  issues: string // 療養上の課題・支援内容（問題点・解決策）
+  evaluation: string // 評価
+}
+
+export interface ReportResult {
+  progress: string // 病状の経過
+  careContent: string // 看護・リハビリテーションの内容
+  homeCare: string // 家庭での介護の状況
+  notes: string // 特記すべき事項
+}
+
+export type RecordType = 'soap' | 'plan' | 'report'
+
+export interface RecordDoc {
+  id?: number
+  type: RecordType
+  patientId?: number
+  patientName: string
+  visitDate: string // YYYY-MM-DD
+  memo: string
+  vitals?: Vitals
+  soap?: SoapResult
+  plan?: PlanResult
+  report?: ReportResult
+  createdAt: number
+  updatedAt: number
+}
+
+/** 書類タイプごとの表示情報（各画面で共通利用） */
+export const DOC_META: Record<RecordType, { short: string; badgeClass: string }> = {
+  soap: { short: 'SOAP記録', badgeClass: '' },
+  plan: { short: '計画書', badgeClass: 'plan' },
+  report: { short: '報告書', badgeClass: 'report' }
+}
+
+export function vitalsToText(v: Vitals | undefined): string {
+  if (!v) return ''
+  const parts: string[] = []
+  if (v.temp) parts.push(`体温${v.temp}℃`)
+  if (v.bpHigh || v.bpLow) parts.push(`血圧${v.bpHigh}/${v.bpLow}mmHg`)
+  if (v.pulse) parts.push(`脈拍${v.pulse}回/分`)
+  if (v.spo2) parts.push(`SpO2 ${v.spo2}%`)
+  if (v.resp) parts.push(`呼吸数${v.resp}回/分`)
+  return parts.join('、')
+}
