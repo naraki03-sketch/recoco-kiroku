@@ -4,7 +4,7 @@ import { clearDraft, loadDraft, saveDraft } from '../lib/draft'
 import { generatePlan, generateReport, generateSoap } from '../lib/prompts'
 import { getActiveApiKey } from '../lib/settings'
 import type { Patient, RecordDoc, RecordType, Vitals } from '../lib/types'
-import { emptyVitals } from '../lib/types'
+import { emptyVitals, vitalsToText } from '../lib/types'
 import { formatDateJa, Header, today } from '../components/ui'
 
 const TITLES: Record<RecordType, string> = {
@@ -44,6 +44,8 @@ export default function InputForm({ type, onBack, onGenerated, goSettings }: Pro
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [restoredAt, setRestoredAt] = useState<number | null>(null)
+  const [prevRecord, setPrevRecord] = useState<RecordDoc | null>(null)
+  const [usePrev, setUsePrev] = useState(true)
   // 初回マウント時の下書き復元が終わるまで自動保存を止めるためのフラグ
   const restoredRef = useRef(false)
 
@@ -74,6 +76,29 @@ export default function InputForm({ type, onBack, onGenerated, goSettings }: Pro
     }, 400)
     return () => window.clearTimeout(t)
   }, [type, patientId, visitDate, vitals, memo])
+
+  // SOAPのとき、選択中の利用者の「今回より前の最新SOAP記録」を経過評価用に取得する
+  useEffect(() => {
+    if (type !== 'soap' || patientId === '') {
+      setPrevRecord(null)
+      return
+    }
+    let cancelled = false
+    db.records
+      .where('patientId')
+      .equals(patientId)
+      .toArray()
+      .then((rows) => {
+        if (cancelled) return
+        const prev = rows
+          .filter((r) => r.type === 'soap' && r.soap && r.visitDate < visitDate)
+          .sort((a, b) => (a.visitDate < b.visitDate ? 1 : -1))[0]
+        setPrevRecord(prev ?? null)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [type, patientId, visitDate])
 
   const clearForm = () => {
     setPatientId('')
@@ -122,7 +147,16 @@ export default function InputForm({ type, onBack, onGenerated, goSettings }: Pro
         updatedAt: now
       }
       if (type === 'soap') {
-        const soap = await generateSoap(memo, vitals)
+        const previous =
+          usePrev && prevRecord?.soap
+            ? {
+                visitDate: prevRecord.visitDate,
+                o: prevRecord.soap.o,
+                a: prevRecord.soap.a,
+                vitalsText: vitalsToText(prevRecord.vitals)
+              }
+            : undefined
+        const soap = await generateSoap(memo, vitals, previous)
         clearDraft(type)
         onGenerated({ ...base, vitals, soap })
       } else if (type === 'plan') {
@@ -245,6 +279,15 @@ export default function InputForm({ type, onBack, onGenerated, goSettings }: Pro
             氏名・住所などの個人情報はメモに入れないでください。
           </p>
         </div>
+
+        {isSoap && prevRecord && (
+          <label className="prev-toggle">
+            <input type="checkbox" checked={usePrev} onChange={(e) => setUsePrev(e.target.checked)} />
+            <span>
+              前回の記録（{formatDateJa(prevRecord.visitDate)}）を参考にして、経過（改善・悪化）をふまえた文章にする
+            </span>
+          </label>
+        )}
 
         {error && (
           <div className="error-box">

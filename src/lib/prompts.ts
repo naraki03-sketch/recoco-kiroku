@@ -1,3 +1,4 @@
+import { formatDateJa } from '../components/ui'
 import { generateJson } from './gemini'
 import type { PlanResult, ReportResult, SoapResult, Vitals } from './types'
 import { vitalsToText } from './types'
@@ -30,8 +31,28 @@ const ASSESSMENT_GUIDE = `
 弱い例: 「下肢に浮腫がみられる。食欲は良好。夜眠れないとの訴えあり。」
 良い例: 「下肢浮腫は前回より軽減しており、利尿薬の効果が現れていると考えられる。食欲は保たれ全身状態は概ね安定しているが、不眠の訴えが続いており、日中の活動量低下や心不全増悪への不安が関与している可能性がある。浮腫の再増悪や睡眠不足による日中の活動性低下に留意が必要である。」`
 
-export async function generateSoap(memo: string, vitals?: Vitals): Promise<SoapResult> {
+/** 前回訪問の記録（経過評価のためAIに渡す。氏名など個人を特定する情報は含めない）。 */
+export interface PreviousSoap {
+  visitDate: string
+  o: string
+  a: string
+  vitalsText: string
+}
+
+export async function generateSoap(
+  memo: string,
+  vitals?: Vitals,
+  previous?: PreviousSoap
+): Promise<SoapResult> {
   const vitalsText = vitalsToText(vitals)
+  const previousBlock = previous
+    ? `\n\n【前回訪問の記録（${formatDateJa(previous.visitDate)}）】
+※ 経過（改善・悪化・不変）を評価するための参考情報。今回のメモに書かれていない事実を新たに作り出す根拠にはしないこと。
+- 前回バイタル: ${previous.vitalsText || '（記録なし）'}
+- 前回O（客観的情報）: ${previous.o || '（記録なし）'}
+- 前回A（アセスメント）: ${previous.a || '（記録なし）'}`
+    : ''
+
   const prompt = `あなたは経験豊富な訪問看護師の記録作成を手伝うアシスタントです。
 訪問中に音声入力で羅列されたメモを、SOAP形式の訪問看護記録に整形してください。
 ${FACT_RULES}
@@ -39,7 +60,7 @@ ${FACT_RULES}
 【SOAP各項目の書き方】
 - S（主観的情報）: 利用者や家族の発言・訴え。メモ内の発言はできるだけ「」付きの発言として残す。
 - O（客観的情報）: バイタルサイン、観察所見、実施したケアの事実。バイタルサインが提供されていれば必ずOの冒頭に含める。
-- A（アセスメント）: 最重要項目。下記の枠組みに沿って看護師の臨床判断を記述する。
+- A（アセスメント）: 最重要項目。下記の枠組みに沿って看護師の臨床判断を記述する。前回記録がある場合は前回からの変化を必ず評価に含める。
 - P（プラン）: Aの判断を受けた今後の看護計画・次回訪問での観察点・指導内容。
 ${ASSESSMENT_GUIDE}
 
@@ -48,7 +69,7 @@ ${ASSESSMENT_GUIDE}
 そのうえで a には、その思考を踏まえた完成文のアセスメントを、看護記録として自然な文章で記述する。
 
 【バイタルサイン】
-${vitalsText || '（入力なし）'}
+${vitalsText || '（入力なし）'}${previousBlock}
 
 【音声入力メモ】
 ${memo}`

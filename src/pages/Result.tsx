@@ -149,12 +149,21 @@ export default function Result({ record: initial, onBack, onSaved }: Props) {
           </div>
         ))}
 
-        {record.memo && (
-          <details className="memo-view">
-            <summary>元のメモを見る</summary>
-            <p>{record.memo}</p>
-          </details>
-        )}
+        <details className="memo-view">
+          <summary>元のメモを見る・編集する</summary>
+          <p className="memo-edit-hint">
+            メモを直して「AIで作り直す」を押すと、直した内容で作り直します。
+          </p>
+          <textarea
+            rows={Math.max(3, Math.min(10, record.memo.split('\n').length + 2))}
+            value={record.memo}
+            onChange={(e) => {
+              const memo = e.target.value
+              setDirty(true)
+              setRecord((r) => ({ ...r, memo }))
+            }}
+          />
+        </details>
 
         {error && <div className="error-box">{error}</div>}
 

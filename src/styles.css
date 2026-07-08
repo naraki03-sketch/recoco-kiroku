@@ -458,6 +458,16 @@ details.memo-view p {
   margin: 8px 0 0;
 }
 
+details.memo-view .memo-edit-hint {
+  color: var(--text-sub);
+  white-space: normal;
+}
+
+details.memo-view textarea {
+  margin-top: 8px;
+  font-size: 15px;
+}
+
 a {
   color: var(--teal);
 }
@@ -479,4 +489,27 @@ a {
 
 .restore-note .btn-small {
   flex-shrink: 0;
+}
+
+/* ---------- 前回参照トグル ---------- */
+.prev-toggle {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px 14px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.prev-toggle input[type='checkbox'] {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  margin: 0;
+  accent-color: var(--teal);
 }
