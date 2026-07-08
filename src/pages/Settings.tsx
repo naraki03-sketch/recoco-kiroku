@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react'
+import PatientManager from '../components/PatientManager'
 import { exportBackup, importBackup } from '../lib/backup'
 import { testConnection } from '../lib/gemini'
 import { getApiKey, getModel, getProvider, isGemmaModel, MODEL_GROUPS, setApiKey, setModel } from '../lib/settings'
@@ -150,6 +151,8 @@ export default function Settings({ onBack }: { onBack: () => void }) {
         <button className="btn btn-secondary" onClick={runTest} disabled={testing || !currentKey.trim()}>
           {testing ? '接続テスト中…' : '接続テスト'}
         </button>
+
+        <PatientManager showToast={showToast} />
 
         <div className="card">
           <label className="label">データのバックアップ</label>

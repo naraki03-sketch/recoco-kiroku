@@ -318,6 +318,36 @@ textarea:focus {
 }
 
 /* ---------- 履歴 ---------- */
+.history-filters {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.type-tabs {
+  display: flex;
+  gap: 6px;
+}
+
+.type-tab {
+  flex: 1;
+  padding: 8px 4px;
+  font-size: 13px;
+  font-weight: 700;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--text-sub);
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.type-tab.active {
+  background: var(--teal);
+  color: #fff;
+  border-color: var(--teal);
+}
+
 .history-item {
   display: flex;
   align-items: center;
@@ -466,6 +496,41 @@ details.memo-view .memo-edit-hint {
 details.memo-view textarea {
   margin-top: 8px;
   font-size: 15px;
+}
+
+/* ---------- 利用者の管理 ---------- */
+.patient-manage-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.patient-manage-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.patient-manage-row .pm-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 15px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.patient-manage-row input[type='text'] {
+  flex: 1;
+}
+
+.patient-manage-row .btn-small {
+  flex-shrink: 0;
+}
+
+.btn-small.danger {
+  border-color: var(--danger);
+  color: var(--danger);
 }
 
 a {

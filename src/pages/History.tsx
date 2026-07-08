@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { db } from '../lib/db'
-import type { RecordDoc } from '../lib/types'
+import type { RecordDoc, RecordType } from '../lib/types'
 import { DOC_META } from '../lib/types'
 import { formatDateJa, Header } from '../components/ui'
 
@@ -9,8 +9,17 @@ interface Props {
   onOpen: (record: RecordDoc) => void
 }
 
+const TYPE_FILTERS: { value: 'all' | RecordType; label: string }[] = [
+  { value: 'all', label: 'すべて' },
+  { value: 'soap', label: 'SOAP記録' },
+  { value: 'plan', label: '計画書' },
+  { value: 'report', label: '報告書' }
+]
+
 export default function History({ onBack, onOpen }: Props) {
   const [records, setRecords] = useState<RecordDoc[]>([])
+  const [typeFilter, setTypeFilter] = useState<'all' | RecordType>('all')
+  const [patientFilter, setPatientFilter] = useState('')
 
   const load = async () => {
     const all = await db.records.orderBy('updatedAt').reverse().toArray()
@@ -20,6 +29,23 @@ export default function History({ onBack, onOpen }: Props) {
   useEffect(() => {
     load()
   }, [])
+
+  // 履歴に登場する利用者名の一覧（絞り込み用）
+  const patientNames = useMemo(() => {
+    const set = new Set<string>()
+    for (const r of records) if (r.patientName) set.add(r.patientName)
+    return Array.from(set).sort()
+  }, [records])
+
+  const filtered = useMemo(
+    () =>
+      records.filter(
+        (r) =>
+          (typeFilter === 'all' || r.type === typeFilter) &&
+          (patientFilter === '' || r.patientName === patientFilter)
+      ),
+    [records, typeFilter, patientFilter]
+  )
 
   const remove = async (e: React.MouseEvent, id?: number) => {
     e.stopPropagation()
@@ -43,7 +69,34 @@ export default function History({ onBack, onOpen }: Props) {
           <p className="empty-note">保存された記録はまだありません</p>
         ) : (
           <>
-            {records.map((r) => (
+            <div className="history-filters">
+              <div className="type-tabs">
+                {TYPE_FILTERS.map((t) => (
+                  <button
+                    key={t.value}
+                    className={`type-tab${typeFilter === t.value ? ' active' : ''}`}
+                    onClick={() => setTypeFilter(t.value)}
+                  >
+                    {t.label}
+                  </button>
+                ))}
+              </div>
+              {patientNames.length > 0 && (
+                <select value={patientFilter} onChange={(e) => setPatientFilter(e.target.value)}>
+                  <option value="">すべての利用者</option>
+                  {patientNames.map((n) => (
+                    <option key={n} value={n}>
+                      {n}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </div>
+
+            {filtered.length === 0 ? (
+              <p className="empty-note">条件に合う記録がありません</p>
+            ) : (
+              filtered.map((r) => (
               <div className="history-item" key={r.id} onClick={() => onOpen(r)}>
                 <div className="info">
                   <div className="line1">
@@ -60,7 +113,8 @@ export default function History({ onBack, onOpen }: Props) {
                   🗑
                 </button>
               </div>
-            ))}
+              ))
+            )}
             <button className="btn btn-danger-ghost" onClick={removeAll}>
               履歴をすべて削除
             </button>
