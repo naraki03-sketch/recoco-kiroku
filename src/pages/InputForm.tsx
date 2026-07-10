@@ -1,6 +1,14 @@
 import { useEffect, useRef, useState } from 'react'
 import { db } from '../lib/db'
-import { clearDraft, loadDraft, saveDraft } from '../lib/draft'
+import {
+  clearDraft,
+  latestDraft,
+  listDrafts,
+  loadDraft,
+  patientKeyOf,
+  saveDraft,
+  type FormDraft
+} from '../lib/draft'
 import { generatePlan, generateReport, generateSoap } from '../lib/prompts'
 import { getActiveApiKey } from '../lib/settings'
 import type { Patient, RecordDoc, RecordType, Vitals } from '../lib/types'
@@ -46,23 +54,23 @@ export default function InputForm({ type, onBack, onGenerated, goSettings }: Pro
   const [restoredAt, setRestoredAt] = useState<number | null>(null)
   const [prevRecord, setPrevRecord] = useState<RecordDoc | null>(null)
   const [usePrev, setUsePrev] = useState(true)
+  // 下書きを持っている利用者キーの集合（選択肢の「（下書きあり）」表示用）
+  const [draftKeys, setDraftKeys] = useState<Set<string>>(new Set())
+  const refreshDraftKeys = () => setDraftKeys(new Set(Object.keys(listDrafts(type))))
   // 初回マウント時の下書き復元が終わるまで自動保存を止めるためのフラグ
   const restoredRef = useRef(false)
 
   useEffect(() => {
     db.patients.orderBy('name').toArray().then(setPatients)
+    refreshDraftKeys()
+    // typeは画面遷移で固定のため依存に含めない
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // 保存済みの下書きがあれば初回に復元する（書類タイプごと）
+  // 保存済みの下書きのうち最後に書いていた1件を初回に復元する（書類タイプごと）
   useEffect(() => {
-    const draft = loadDraft(type)
-    if (draft) {
-      setPatientId(draft.patientId)
-      setVisitDate(draft.visitDate || today())
-      setVitals(draft.vitals ?? emptyVitals)
-      setMemo(draft.memo)
-      setRestoredAt(draft.savedAt)
-    }
+    const draft = latestDraft(type)
+    if (draft) applyDraft(draft, draft.patientId)
     restoredRef.current = true
     // typeは画面遷移で固定のため依存に含めない
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -72,7 +80,7 @@ export default function InputForm({ type, onBack, onGenerated, goSettings }: Pro
   useEffect(() => {
     if (!restoredRef.current) return
     const t = window.setTimeout(() => {
-      saveDraft(type, { patientId, visitDate, vitals, memo })
+      saveDraft(type, patientKeyOf(patientId), { patientId, visitDate, vitals, memo })
     }, 400)
     return () => window.clearTimeout(t)
   }, [type, patientId, visitDate, vitals, memo])
@@ -100,23 +108,89 @@ export default function InputForm({ type, onBack, onGenerated, goSettings }: Pro
     }
   }, [type, patientId, visitDate])
 
-  const clearForm = () => {
-    setPatientId('')
+  // 下書きの内容をフォームへ流し込む（利用者も合わせる）
+  function applyDraft(d: FormDraft, id: number | '') {
+    setPatientId(id)
+    setVisitDate(d.visitDate || today())
+    setVitals(d.vitals ?? emptyVitals)
+    setMemo(d.memo)
+    setRestoredAt(d.savedAt)
+  }
+
+  // 空のフォームにする（利用者は引数で指定。visitDateは今日に戻す）
+  function blankForm(id: number | '') {
+    setPatientId(id)
     setVisitDate(today())
     setVitals(emptyVitals)
     setMemo('')
     setRestoredAt(null)
-    clearDraft(type)
   }
+
+  // 表示中の利用者の下書きスロットだけを消して入力をクリアする
+  const clearForm = () => {
+    clearDraft(type, patientKeyOf(patientId))
+    blankForm(patientId)
+    refreshDraftKeys()
+  }
+
+  /**
+   * 利用者を切り替える。現在の内容を切替前の利用者スロットへ即時保存してから、
+   * 切替後の利用者の下書きを読み込む（無ければ空フォーム）。
+   * debounce保存が切替後スロットを汚染しないよう、保存は同期的に行う。
+   */
+  const changePatient = (newId: number | '') => {
+    const oldKey = patientKeyOf(patientId)
+    const newKey = patientKeyOf(newId)
+    if (oldKey === newKey) return
+
+    // 「選択なし（入力あり）→ 利用者」は、書いていた内容をその利用者のものとして引き継ぐ
+    if (patientId === '' && newId !== '' && memo.trim()) {
+      const existing = loadDraft(type, newKey)
+      if (
+        existing &&
+        !confirm(
+          `${nameOf(newId)}の書きかけが残っています。読み込みますか？\n（キャンセルすると今の入力を続けます）`
+        )
+      ) {
+        // 今の入力を引き継ぐ：noneスロットを消し、その利用者スロットへ移す
+        clearDraft(type, patientKeyOf(''))
+        setPatientId(newId)
+        saveDraft(type, newKey, { patientId: newId, visitDate, vitals, memo })
+        refreshDraftKeys()
+        return
+      }
+      // 既存の下書きを読み込む（または引き継ぎ先に下書きが無い）
+      clearDraft(type, patientKeyOf(''))
+      if (existing) {
+        applyDraft(existing, newId)
+      } else {
+        setPatientId(newId)
+        saveDraft(type, newKey, { patientId: newId, visitDate, vitals, memo })
+      }
+      refreshDraftKeys()
+      return
+    }
+
+    // 通常の切替：今の内容を旧スロットへ即時保存
+    saveDraft(type, oldKey, { patientId, visitDate, vitals, memo })
+    const existing = loadDraft(type, newKey)
+    if (existing) applyDraft(existing, newId)
+    else blankForm(newId)
+    refreshDraftKeys()
+  }
+
+  const nameOf = (id: number | '') =>
+    patients.find((p) => p.id === id)?.name ?? '選択なし'
 
   const addPatient = async () => {
     const name = newPatientName.trim()
     if (!name) return
     const id = await db.patients.add({ name, createdAt: Date.now() })
     setPatients(await db.patients.orderBy('name').toArray())
-    setPatientId(id)
     setNewPatientName('')
     setAddingPatient(false)
+    // 新規追加した利用者へ切替（選択なしで書いていた内容は引き継がれる）
+    changePatient(id)
   }
 
   const setV = (key: keyof Vitals, value: string) => {
@@ -157,15 +231,15 @@ export default function InputForm({ type, onBack, onGenerated, goSettings }: Pro
               }
             : undefined
         const soap = await generateSoap(memo, vitals, previous)
-        clearDraft(type)
+        clearDraft(type, patientKeyOf(patientId))
         onGenerated({ ...base, vitals, soap })
       } else if (type === 'plan') {
         const plan = await generatePlan(memo)
-        clearDraft(type)
+        clearDraft(type, patientKeyOf(patientId))
         onGenerated({ ...base, plan })
       } else {
         const report = await generateReport(memo)
-        clearDraft(type)
+        clearDraft(type, patientKeyOf(patientId))
         onGenerated({ ...base, report })
       }
     } catch (e) {
@@ -182,7 +256,8 @@ export default function InputForm({ type, onBack, onGenerated, goSettings }: Pro
         {restoredAt && (
           <div className="restore-note">
             <span>
-              前回入力していた内容を復元しました（{formatDateJa(new Date(restoredAt).toISOString().slice(0, 10))}保存）
+              {patientId !== '' ? `${nameOf(patientId)}の書きかけを復元しました` : '前回入力していた内容を復元しました'}（
+              {formatDateJa(new Date(restoredAt).toISOString().slice(0, 10))}保存）
             </span>
             <button className="btn-small" onClick={clearForm}>
               入力をクリア
@@ -212,12 +287,13 @@ export default function InputForm({ type, onBack, onGenerated, goSettings }: Pro
             <div className="patient-row">
               <select
                 value={patientId}
-                onChange={(e) => setPatientId(e.target.value ? Number(e.target.value) : '')}
+                onChange={(e) => changePatient(e.target.value ? Number(e.target.value) : '')}
               >
                 <option value="">選択なし</option>
                 {patients.map((p) => (
                   <option key={p.id} value={p.id}>
                     {p.name}
+                    {p.id != null && draftKeys.has(String(p.id)) ? '（下書きあり）' : ''}
                   </option>
                 ))}
               </select>

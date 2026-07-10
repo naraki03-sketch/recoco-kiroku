@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { db } from '../lib/db'
+import { clearDraftsForPatient } from '../lib/draft'
 import type { Patient } from '../lib/types'
 
 /** 利用者の一覧・名前変更・削除を行う設定内セクション。 */
@@ -35,8 +36,14 @@ export default function PatientManager({ showToast }: { showToast: (m: string) =
 
   const remove = async (p: Patient) => {
     if (p.id == null) return
-    if (!confirm(`「${p.name}」を利用者一覧から削除しますか？\n（この利用者の保存済み記録は残ります）`)) return
+    if (
+      !confirm(
+        `「${p.name}」を利用者一覧から削除しますか？\n（書きかけの下書きも削除されます。保存済みの記録は残ります）`
+      )
+    )
+      return
     await db.patients.delete(p.id)
+    clearDraftsForPatient(p.id)
     await load()
     showToast('利用者を削除しました')
   }
