@@ -1,10 +1,12 @@
 import { useState } from 'react'
 import type { RecordDoc, RecordType } from './lib/types'
+import { loadPendingRecord } from './lib/pending'
 import Home from './pages/Home'
 import InputForm from './pages/InputForm'
 import Result from './pages/Result'
 import History from './pages/History'
 import Settings from './pages/Settings'
+import ErrorBoundary from './components/ErrorBoundary'
 
 export type View =
   | { name: 'home' }
@@ -14,33 +16,38 @@ export type View =
   | { name: 'settings' }
 
 export default function App() {
-  const [view, setView] = useState<View>({ name: 'home' })
+  const [view, setView] = useState<View>(() => {
+    const pending = loadPendingRecord()
+    return pending ? { name: 'result', record: pending } : { name: 'home' }
+  })
 
   return (
     <div className="app">
-      {view.name === 'home' && <Home go={setView} />}
-      {view.name === 'form' && (
-        <InputForm
-          type={view.type}
-          onBack={() => setView({ name: 'home' })}
-          onGenerated={(record) => setView({ name: 'result', record })}
-          goSettings={() => setView({ name: 'settings' })}
-        />
-      )}
-      {view.name === 'result' && (
-        <Result
-          record={view.record}
-          onBack={() => setView({ name: 'home' })}
-          onSaved={() => setView({ name: 'history' })}
-        />
-      )}
-      {view.name === 'history' && (
-        <History
-          onBack={() => setView({ name: 'home' })}
-          onOpen={(record) => setView({ name: 'result', record })}
-        />
-      )}
-      {view.name === 'settings' && <Settings onBack={() => setView({ name: 'home' })} />}
+      <ErrorBoundary onReset={() => setView({ name: 'home' })}>
+        {view.name === 'home' && <Home go={setView} />}
+        {view.name === 'form' && (
+          <InputForm
+            type={view.type}
+            onBack={() => setView({ name: 'home' })}
+            onGenerated={(record) => setView({ name: 'result', record })}
+            goSettings={() => setView({ name: 'settings' })}
+          />
+        )}
+        {view.name === 'result' && (
+          <Result
+            record={view.record}
+            onBack={() => setView({ name: 'home' })}
+            onSaved={() => setView({ name: 'history' })}
+          />
+        )}
+        {view.name === 'history' && (
+          <History
+            onBack={() => setView({ name: 'home' })}
+            onOpen={(record) => setView({ name: 'result', record })}
+          />
+        )}
+        {view.name === 'settings' && <Settings onBack={() => setView({ name: 'home' })} />}
+      </ErrorBoundary>
     </div>
   )
 }

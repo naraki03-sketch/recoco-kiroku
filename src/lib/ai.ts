@@ -5,20 +5,19 @@ import {
   isGemmaModel,
   type ProviderMeta
 } from './settings'
+import { validateGeneratedJson, type JsonSchema } from './aiValidation'
+import {
+  fetchWithTimeout,
+  RequestCancelledError,
+  RequestTimeoutError,
+  type RequestControl
+} from './request'
 
 /** AI呼び出しで発生したユーザー向けエラー（メッセージは日本語で表示する）。 */
 export class AiError extends Error {}
 
 /** 旧名の互換エイリアス（既存importが壊れないように残す）。 */
 export const GeminiError = AiError
-
-interface JsonSchema {
-  type: string
-  properties?: Record<string, JsonSchema>
-  required?: string[]
-  description?: string
-  propertyOrdering?: string[]
-}
 
 /** スキーマのキー一覧からJSON出力を指示する文（構造化出力に非対応の提供元用）。 */
 function jsonInstruction(schema: JsonSchema): string {
@@ -29,17 +28,17 @@ function jsonInstruction(schema: JsonSchema): string {
 }
 
 /** コードブロックや前後の余計な文字が混ざっていてもJSONを取り出してパースする。 */
-function parseJsonLoose<T>(text: string): T {
+function parseJsonLoose(text: string): unknown {
   let t = text.trim()
   const fence = t.match(/```(?:json)?\s*([\s\S]*?)```/i)
   if (fence) t = fence[1].trim()
   try {
-    return JSON.parse(t) as T
+    return JSON.parse(t) as unknown
   } catch {
     const start = t.indexOf('{')
     const end = t.lastIndexOf('}')
     if (start !== -1 && end > start) {
-      return JSON.parse(t.slice(start, end + 1)) as T
+      return JSON.parse(t.slice(start, end + 1)) as unknown
     }
     throw new AiError('AIの回答の読み取りに失敗しました。もう一度お試しください。')
   }
@@ -70,26 +69,41 @@ function requireKey(meta: ProviderMeta): string {
   return key
 }
 
+function rethrowRequestError(error: unknown): never {
+  if (error instanceof RequestTimeoutError || error instanceof RequestCancelledError) throw error
+  throw new AiError('通信に失敗しました。電波状況を確認してもう一度お試しください。')
+}
+
 /**
  * 選択中のモデルの提供元に応じてAIを呼び出し、JSONで結果を受け取る。
  * APIキーは設定画面で保存されたものを使用（端末内のみ保持）。
  * - Google(Gemini): 構造化出力(responseSchema)を使用
  * - Google(Gemma) / Anthropic / OpenAI互換: プロンプトでJSON出力を指示し頑健にパースする
  */
-export async function generateJson<T>(prompt: string, schema: JsonSchema): Promise<T> {
+export async function generateJson<T>(
+  prompt: string,
+  schema: JsonSchema,
+  control: RequestControl = {}
+): Promise<T> {
   const model = getEffectiveModel()
   const meta = getProviderMeta(model)
   switch (meta.kind) {
     case 'anthropic':
-      return callAnthropic<T>(meta, model, prompt, schema)
+      return callAnthropic<T>(meta, model, prompt, schema, control)
     case 'openai-compatible':
-      return callOpenAICompatible<T>(meta, model, prompt, schema)
+      return callOpenAICompatible<T>(meta, model, prompt, schema, control)
     default:
-      return callGoogle<T>(meta, model, prompt, schema)
+      return callGoogle<T>(meta, model, prompt, schema, control)
   }
 }
 
-async function callGoogle<T>(meta: ProviderMeta, model: string, prompt: string, schema: JsonSchema): Promise<T> {
+async function callGoogle<T>(
+  meta: ProviderMeta,
+  model: string,
+  prompt: string,
+  schema: JsonSchema,
+  control: RequestControl
+): Promise<T> {
   const apiKey = requireKey(meta)
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`
   const gemma = isGemmaModel(model)
@@ -101,7 +115,7 @@ async function callGoogle<T>(meta: ProviderMeta, model: string, prompt: string, 
 
   let res: Response
   try {
-    res = await fetch(url, {
+    res = await fetchWithTimeout(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -111,9 +125,9 @@ async function callGoogle<T>(meta: ProviderMeta, model: string, prompt: string, 
         contents: [{ parts: [{ text: finalPrompt }] }],
         generationConfig
       })
-    })
-  } catch {
-    throw new AiError('通信に失敗しました。電波状況を確認してもう一度お試しください。')
+    }, control)
+  } catch (error) {
+    rethrowRequestError(error)
   }
 
   if (!res.ok) throw errorForStatus(res.status, meta.label)
@@ -123,15 +137,21 @@ async function callGoogle<T>(meta: ProviderMeta, model: string, prompt: string, 
   if (!text) {
     throw new AiError('AIから有効な回答が得られませんでした。もう一度お試しください。')
   }
-  return parseJsonLoose<T>(text)
+  return validateGeneratedJson<T>(parseJsonLoose(text), schema)
 }
 
-async function callAnthropic<T>(meta: ProviderMeta, model: string, prompt: string, schema: JsonSchema): Promise<T> {
+async function callAnthropic<T>(
+  meta: ProviderMeta,
+  model: string,
+  prompt: string,
+  schema: JsonSchema,
+  control: RequestControl
+): Promise<T> {
   const apiKey = requireKey(meta)
 
   let res: Response
   try {
-    res = await fetch('https://api.anthropic.com/v1/messages', {
+    res = await fetchWithTimeout('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -146,9 +166,9 @@ async function callAnthropic<T>(meta: ProviderMeta, model: string, prompt: strin
         max_tokens: 4096,
         messages: [{ role: 'user', content: prompt + jsonInstruction(schema) }]
       })
-    })
-  } catch {
-    throw new AiError('通信に失敗しました。電波状況を確認してもう一度お試しください。')
+    }, control)
+  } catch (error) {
+    rethrowRequestError(error)
   }
 
   if (!res.ok) throw errorForStatus(res.status, meta.label)
@@ -160,7 +180,7 @@ async function callAnthropic<T>(meta: ProviderMeta, model: string, prompt: strin
   if (!text) {
     throw new AiError('AIから有効な回答が得られませんでした。もう一度お試しください。')
   }
-  return parseJsonLoose<T>(text)
+  return validateGeneratedJson<T>(parseJsonLoose(text), schema)
 }
 
 /**
@@ -172,7 +192,8 @@ async function callOpenAICompatible<T>(
   meta: ProviderMeta,
   model: string,
   prompt: string,
-  schema: JsonSchema
+  schema: JsonSchema,
+  control: RequestControl
 ): Promise<T> {
   const apiKey = requireKey(meta)
   const baseUrl = meta.baseUrl ?? 'https://api.openai.com/v1'
@@ -189,7 +210,7 @@ async function callOpenAICompatible<T>(
 
   let res: Response
   try {
-    res = await fetch(`${baseUrl}/chat/completions`, {
+    res = await fetchWithTimeout(`${baseUrl}/chat/completions`, {
       method: 'POST',
       headers,
       body: JSON.stringify({
@@ -203,9 +224,9 @@ async function callOpenAICompatible<T>(
           { role: 'user', content: prompt + jsonInstruction(schema) }
         ]
       })
-    })
-  } catch {
-    throw new AiError('通信に失敗しました。電波状況を確認してもう一度お試しください。')
+    }, control)
+  } catch (error) {
+    rethrowRequestError(error)
   }
 
   if (!res.ok) throw errorForStatus(res.status, meta.label)
@@ -215,7 +236,7 @@ async function callOpenAICompatible<T>(
   if (!text) {
     throw new AiError('AIから有効な回答が得られませんでした。もう一度お試しください。')
   }
-  return parseJsonLoose<T>(text)
+  return validateGeneratedJson<T>(parseJsonLoose(text), schema)
 }
 
 /** 設定画面の「接続テスト」用。成功すればtrue、失敗なら日本語メッセージ付きで例外。 */

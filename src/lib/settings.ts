@@ -187,9 +187,14 @@ export function setApiKey(provider: Provider, key: string) {
   localStorage.setItem(PROVIDERS[provider].storageKey, key.trim())
 }
 
-/** 現在選択中のモデルの提供元に対応するAPIキー。 */
+/** 実際に利用するモデルの提供元情報。カスタムモデルIDを含めて判定する。 */
+export function getActiveProviderMeta(): ProviderMeta {
+  return getProviderMeta(getEffectiveModel())
+}
+
+/** 現在実際に利用するモデルの提供元に対応するAPIキー。 */
 export function getActiveApiKey(): string {
-  return getApiKey(getProvider(getModel()))
+  return getApiKey(getActiveProviderMeta().id)
 }
 
 export function getModel(): string {

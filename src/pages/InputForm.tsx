@@ -10,10 +10,13 @@ import {
   type FormDraft
 } from '../lib/draft'
 import { generatePlan, generateReport, generateSoap } from '../lib/prompts'
+import { savePendingRecord } from '../lib/pending'
 import { getActiveApiKey } from '../lib/settings'
 import type { Patient, RecordDoc, RecordType, Vitals } from '../lib/types'
 import { emptyVitals, vitalsToText } from '../lib/types'
 import { formatDateJa, Header, today } from '../components/ui'
+import { validateVitals } from '../lib/clinicalValidation'
+import { createStableId } from '../lib/id'
 
 const TITLES: Record<RecordType, string> = {
   soap: '訪問看護記録（SOAP）',
@@ -59,6 +62,10 @@ export default function InputForm({ type, onBack, onGenerated, goSettings }: Pro
   const refreshDraftKeys = () => setDraftKeys(new Set(Object.keys(listDrafts(type))))
   // 初回マウント時の下書き復元が終わるまで自動保存を止めるためのフラグ
   const restoredRef = useRef(false)
+  const patientSelectRef = useRef<HTMLSelectElement>(null)
+  const memoRef = useRef<HTMLTextAreaElement>(null)
+  const vitalsRef = useRef<HTMLDivElement>(null)
+  const abortRef = useRef<AbortController | null>(null)
 
   useEffect(() => {
     db.patients.orderBy('name').toArray().then(setPatients)
@@ -185,7 +192,11 @@ export default function InputForm({ type, onBack, onGenerated, goSettings }: Pro
   const addPatient = async () => {
     const name = newPatientName.trim()
     if (!name) return
-    const id = await db.patients.add({ name, createdAt: Date.now() })
+    if (patients.some((patient) => patient.name.trim() === name)) {
+      setError('同じ表示名の利用者がすでに登録されています。取り違え防止のため、既存の利用者を選ぶか識別できる表示名にしてください。')
+      return
+    }
+    const id = await db.patients.add({ uuid: createStableId(), name, createdAt: Date.now() })
     setPatients(await db.patients.orderBy('name').toArray())
     setNewPatientName('')
     setAddingPatient(false)
@@ -199,22 +210,48 @@ export default function InputForm({ type, onBack, onGenerated, goSettings }: Pro
 
   const generate = async () => {
     setError('')
+    if (patientId === '') {
+      setError('利用者を選択してください。記録の取り違えを防ぐため、利用者未選択では生成できません。')
+      requestAnimationFrame(() => patientSelectRef.current?.focus())
+      return
+    }
+    if (!visitDate) {
+      setError('訪問日を入力してください。')
+      return
+    }
     if (!memo.trim()) {
       setError('メモを入力してください。キーボードのマイクボタンから音声入力ができます。')
+      requestAnimationFrame(() => memoRef.current?.focus())
+      return
+    }
+    if (isSoap) {
+      const vitalErrors = validateVitals(vitals)
+      if (vitalErrors.length) {
+        setError(vitalErrors.join('\n'))
+        requestAnimationFrame(() => vitalsRef.current?.querySelector('input')?.focus())
+        return
+      }
+    }
+    const patient = patients.find((p) => p.id === patientId)
+    if (!patient) {
+      setError('選択した利用者を確認できませんでした。利用者を選び直してください。')
+      requestAnimationFrame(() => patientSelectRef.current?.focus())
       return
     }
     if (!getActiveApiKey()) {
       setError('APIキーが設定されていません。設定画面からAPIキーを入力してください。')
       return
     }
+    const controller = new AbortController()
+    abortRef.current = controller
     setLoading(true)
     try {
-      const patient = patients.find((p) => p.id === patientId)
       const now = Date.now()
       const base: RecordDoc = {
+        uuid: createStableId(),
         type,
-        patientId: patient?.id,
-        patientName: patient?.name ?? '',
+        patientId: patient.id,
+        patientName: patient.name,
         visitDate,
         memo,
         createdAt: now,
@@ -230,21 +267,25 @@ export default function InputForm({ type, onBack, onGenerated, goSettings }: Pro
                 vitalsText: vitalsToText(prevRecord.vitals)
               }
             : undefined
-        const soap = await generateSoap(memo, vitals, previous)
-        clearDraft(type, patientKeyOf(patientId))
-        onGenerated({ ...base, vitals, soap })
+        const soap = await generateSoap(memo, vitals, previous, { signal: controller.signal })
+        const generated = { ...base, vitals, previousSoap: previous, soap }
+        savePendingRecord(generated)
+        onGenerated(generated)
       } else if (type === 'plan') {
-        const plan = await generatePlan(memo)
-        clearDraft(type, patientKeyOf(patientId))
-        onGenerated({ ...base, plan })
+        const plan = await generatePlan(memo, { signal: controller.signal })
+        const generated = { ...base, plan }
+        savePendingRecord(generated)
+        onGenerated(generated)
       } else {
-        const report = await generateReport(memo)
-        clearDraft(type, patientKeyOf(patientId))
-        onGenerated({ ...base, report })
+        const report = await generateReport(memo, { signal: controller.signal })
+        const generated = { ...base, report }
+        savePendingRecord(generated)
+        onGenerated(generated)
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : 'エラーが発生しました。もう一度お試しください。')
     } finally {
+      abortRef.current = null
       setLoading(false)
     }
   }
@@ -266,30 +307,34 @@ export default function InputForm({ type, onBack, onGenerated, goSettings }: Pro
         )}
 
         <div className="card">
-          <label className="label">利用者</label>
+          <label className="label" htmlFor="patient-select">利用者（必須）</label>
           {addingPatient ? (
             <div className="patient-row">
               <input
                 type="text"
+                aria-label="新しい利用者の表示名"
                 placeholder="利用者名（例：A様）"
                 value={newPatientName}
                 onChange={(e) => setNewPatientName(e.target.value)}
                 autoFocus
               />
-              <button className="btn-small" onClick={addPatient}>
+              <button className="btn-small" type="button" onClick={addPatient}>
                 追加
               </button>
-              <button className="btn-small" onClick={() => setAddingPatient(false)}>
+              <button className="btn-small" type="button" onClick={() => setAddingPatient(false)}>
                 取消
               </button>
             </div>
           ) : (
             <div className="patient-row">
               <select
+                id="patient-select"
+                ref={patientSelectRef}
                 value={patientId}
                 onChange={(e) => changePatient(e.target.value ? Number(e.target.value) : '')}
+                required
               >
-                <option value="">選択なし</option>
+                <option value="">利用者を選択</option>
                 {patients.map((p) => (
                   <option key={p.id} value={p.id}>
                     {p.name}
@@ -297,54 +342,56 @@ export default function InputForm({ type, onBack, onGenerated, goSettings }: Pro
                   </option>
                 ))}
               </select>
-              <button className="btn-small" onClick={() => setAddingPatient(true)}>
+              <button className="btn-small" type="button" onClick={() => setAddingPatient(true)}>
                 ＋新規
               </button>
             </div>
           )}
           <p className="hint">利用者名は端末内にのみ保存され、AIには送信されません。</p>
 
-          <label className="label" style={{ marginTop: 12 }}>
+          <label className="label" htmlFor="visit-date" style={{ marginTop: 12 }}>
             訪問日
           </label>
-          <input type="date" value={visitDate} onChange={(e) => setVisitDate(e.target.value)} />
+          <input id="visit-date" type="date" value={visitDate} onChange={(e) => setVisitDate(e.target.value)} required />
         </div>
 
         {isSoap && (
-          <div className="card">
-            <label className="label">バイタルサイン（わかる項目だけでOK）</label>
+          <div className="card" ref={vitalsRef}>
+            <h2 className="label">バイタルサイン（わかる項目だけでOK）</h2>
             <div className="vitals-grid">
               <div className="field">
-                <label>体温（℃）</label>
-                <input type="text" inputMode="decimal" value={vitals.temp} onChange={(e) => setV('temp', e.target.value)} />
+                <label htmlFor="vital-temp">体温（℃）</label>
+                <input id="vital-temp" type="text" inputMode="decimal" value={vitals.temp} onChange={(e) => setV('temp', e.target.value)} />
               </div>
               <div className="field" style={{ gridColumn: 'span 2' }}>
-                <label>血圧（mmHg）</label>
+                <span className="field-label">血圧（mmHg）</span>
                 <div className="bp-pair">
-                  <input type="text" inputMode="numeric" placeholder="上" value={vitals.bpHigh} onChange={(e) => setV('bpHigh', e.target.value)} />
+                  <input aria-label="収縮期血圧" type="text" inputMode="numeric" placeholder="上" value={vitals.bpHigh} onChange={(e) => setV('bpHigh', e.target.value)} />
                   <span>/</span>
-                  <input type="text" inputMode="numeric" placeholder="下" value={vitals.bpLow} onChange={(e) => setV('bpLow', e.target.value)} />
+                  <input aria-label="拡張期血圧" type="text" inputMode="numeric" placeholder="下" value={vitals.bpLow} onChange={(e) => setV('bpLow', e.target.value)} />
                 </div>
               </div>
               <div className="field">
-                <label>脈拍（回/分）</label>
-                <input type="text" inputMode="numeric" value={vitals.pulse} onChange={(e) => setV('pulse', e.target.value)} />
+                <label htmlFor="vital-pulse">脈拍（回/分）</label>
+                <input id="vital-pulse" type="text" inputMode="numeric" value={vitals.pulse} onChange={(e) => setV('pulse', e.target.value)} />
               </div>
               <div className="field">
-                <label>SpO2（%）</label>
-                <input type="text" inputMode="numeric" value={vitals.spo2} onChange={(e) => setV('spo2', e.target.value)} />
+                <label htmlFor="vital-spo2">SpO₂（%）</label>
+                <input id="vital-spo2" type="text" inputMode="numeric" value={vitals.spo2} onChange={(e) => setV('spo2', e.target.value)} />
               </div>
               <div className="field">
-                <label>呼吸数（回/分）</label>
-                <input type="text" inputMode="numeric" value={vitals.resp} onChange={(e) => setV('resp', e.target.value)} />
+                <label htmlFor="vital-resp">呼吸数（回/分）</label>
+                <input id="vital-resp" type="text" inputMode="numeric" value={vitals.resp} onChange={(e) => setV('resp', e.target.value)} />
               </div>
             </div>
           </div>
         )}
 
         <div className="card">
-          <label className="label">{MEMO_LABELS[type]}</label>
+          <label className="label" htmlFor="record-memo">{MEMO_LABELS[type]}</label>
           <textarea
+            id="record-memo"
+            ref={memoRef}
             rows={9}
             placeholder={MEMO_PLACEHOLDERS[type]}
             value={memo}
@@ -366,7 +413,7 @@ export default function InputForm({ type, onBack, onGenerated, goSettings }: Pro
         )}
 
         {error && (
-          <div className="error-box">
+          <div className="error-box" role="alert" aria-live="assertive">
             {error}
             {error.includes('APIキー') && (
               <div style={{ marginTop: 8 }}>
@@ -378,7 +425,7 @@ export default function InputForm({ type, onBack, onGenerated, goSettings }: Pro
           </div>
         )}
 
-        <button className="btn btn-primary" onClick={generate} disabled={loading}>
+        <button className="btn btn-primary" type="button" onClick={generate} disabled={loading}>
           {loading ? (
             <>
               <span className="spinner" />
@@ -388,6 +435,11 @@ export default function InputForm({ type, onBack, onGenerated, goSettings }: Pro
             'AIで文章にする'
           )}
         </button>
+        {loading && (
+          <button className="btn btn-ghost" type="button" onClick={() => abortRef.current?.abort()}>
+            AI作成を中止
+          </button>
+        )}
       </div>
     </>
   )

@@ -97,7 +97,20 @@ export default function History({ onBack, onOpen }: Props) {
               <p className="empty-note">条件に合う記録がありません</p>
             ) : (
               filtered.map((r) => (
-              <div className="history-item" key={r.id} onClick={() => onOpen(r)}>
+              <div
+                className="history-item"
+                key={r.id}
+                role="button"
+                tabIndex={0}
+                aria-label={`${DOC_META[r.type].short} ${formatDateJa(r.visitDate)} ${r.patientName || '利用者名なし'}を開く`}
+                onClick={() => onOpen(r)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault()
+                    onOpen(r)
+                  }
+                }}
+              >
                 <div className="info">
                   <div className="line1">
                     <span className={`badge ${DOC_META[r.type].badgeClass}`}>
@@ -109,7 +122,13 @@ export default function History({ onBack, onOpen }: Props) {
                     {formatDateJa(r.visitDate)}　{r.memo}
                   </div>
                 </div>
-                <button className="del" onClick={(e) => remove(e, r.id)} aria-label="削除">
+                <button
+                  className="del"
+                  type="button"
+                  onClick={(event) => remove(event, r.id)}
+                  onKeyDown={(event) => event.stopPropagation()}
+                  aria-label={`${r.patientName || '利用者名なし'}の${DOC_META[r.type].short}を削除`}
+                >
                   🗑
                 </button>
               </div>

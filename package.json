@@ -5,6 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "deploy": "npm run build && npx --yes gh-pages@6 -d dist -b gh-pages -t"
@@ -15,11 +17,22 @@
     "react-dom": "^19.1.0"
   },
   "devDependencies": {
+    "@testing-library/jest-dom": "^7.0.0",
+    "@testing-library/react": "^16.3.2",
     "@types/react": "^19.1.8",
     "@types/react-dom": "^19.1.6",
     "@vitejs/plugin-react": "^4.6.0",
+    "fake-indexeddb": "^6.2.5",
+    "jsdom": "^29.1.1",
     "typescript": "^5.8.3",
     "vite": "^7.0.0",
-    "vite-plugin-pwa": "^1.0.1"
+    "vite-plugin-pwa": "^1.0.1",
+    "vitest": "^4.1.10"
+  },
+  "overrides": {
+    "jake": "12.10.1",
+    "filelist": "2.0.2",
+    "minimatch": "10.2.6",
+    "brace-expansion": "5.0.8"
   }
 }

@@ -1,5 +1,7 @@
 export interface Patient {
   id?: number
+  /** 端末やバックアップをまたいで同一人物を識別する内部ID。氏名では照合しない。 */
+  uuid?: string
   name: string
   createdAt: number
 }
@@ -27,6 +29,16 @@ export interface SoapResult {
   o: string
   a: string
   p: string
+  /** 音声入力の誤変換・意味不明語など、保存前に確認が必要な事項。問題がなければ「なし」。 */
+  reviewWarning?: string
+}
+
+/** 再生成時にも同じ前回記録を使うため、生成時の参照情報を保持する。 */
+export interface PreviousSoapContext {
+  visitDate: string
+  o: string
+  a: string
+  vitalsText: string
 }
 
 export interface PlanResult {
@@ -46,12 +58,15 @@ export type RecordType = 'soap' | 'plan' | 'report'
 
 export interface RecordDoc {
   id?: number
+  /** バックアップ再取込時の重複を防ぐ内部ID。 */
+  uuid?: string
   type: RecordType
   patientId?: number
   patientName: string
   visitDate: string // YYYY-MM-DD
   memo: string
   vitals?: Vitals
+  previousSoap?: PreviousSoapContext
   soap?: SoapResult
   plan?: PlanResult
   report?: ReportResult
