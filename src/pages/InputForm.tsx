@@ -36,6 +36,44 @@ const MEMO_PLACEHOLDERS: Record<RecordType, string> = {
   report: '例：今月は血圧安定 浮腫軽減し経過良好 服薬管理と入浴介助を継続 発熱なし 家族の介護負担やや大きい ケアマネと情報共有 来月も現状維持で訪問継続…'
 }
 
+interface InputGuide {
+  items: string[]
+  example: string
+}
+
+const INPUT_GUIDES: Record<RecordType, InputGuide> = {
+  soap: {
+    items: [
+      '本人・家族の訴えや発言',
+      '観察した状態と前回からの変化',
+      '実施したケア・処置とその反応',
+      '次回も確認・継続すること'
+    ],
+    example:
+      '本人より「昨夜は2時間ほどしか眠れなかった」との訴えあり。朝食は半量摂取。下肢浮腫は前回よりやや軽減。服薬を確認。入浴介助を実施し、皮膚トラブルなし。次回も睡眠状況と浮腫を観察する。'
+  },
+  plan: {
+    items: [
+      '本人・家族の希望や生活上の目標',
+      '現在困っていることと、その根拠となる事実',
+      '達成したい具体的な目標',
+      '実施する支援内容・訪問頻度・連携方針'
+    ],
+    example:
+      '本人は自宅での生活を継続したいと希望。室内歩行時にふらつきあり。服薬忘れが週2回程度ある。安全に室内移動できること、服薬忘れを減らすことを目標とする。週2回訪問し、状態観察、服薬確認、転倒予防の環境調整を行う。'
+  },
+  report: {
+    items: [
+      '対象期間中の状態や症状の変化',
+      '実施した看護・リハビリとその反応',
+      '家族の介護状況や本人・家族の訴え',
+      '主治医・ケアマネジャー等との連携事項と今後の方針'
+    ],
+    example:
+      '対象期間中、発熱なし。下肢浮腫は月初より軽減。服薬確認と入浴介助を継続し、皮膚トラブルなし。家族より介助負担の訴えあり。ケアマネジャーへ情報共有した。次月も状態観察と服薬支援を継続予定。'
+  }
+}
+
 interface Props {
   type: RecordType
   onBack: () => void
@@ -45,6 +83,7 @@ interface Props {
 
 export default function InputForm({ type, onBack, onGenerated, goSettings }: Props) {
   const isSoap = type === 'soap'
+  const guide = INPUT_GUIDES[type]
   const [patients, setPatients] = useState<Patient[]>([])
   const [patientId, setPatientId] = useState<number | ''>('')
   const [addingPatient, setAddingPatient] = useState(false)
@@ -388,6 +427,20 @@ export default function InputForm({ type, onBack, onGenerated, goSettings }: Pro
         )}
 
         <div className="card">
+          <section className="input-guide" aria-labelledby="input-guide-title">
+            <h2 id="input-guide-title" className="input-guide-title">入力する内容</h2>
+            <ul>
+              {guide.items.map((item) => <li key={item}>{item}</li>)}
+            </ul>
+            <div className="input-example">
+              <strong>架空の入力例</strong>
+              <p>{guide.example}</p>
+            </div>
+            <p className="input-guide-note">
+              全項目を埋める必要はありません。分かる範囲の事実だけを書いてください。
+            </p>
+          </section>
+
           <label className="label" htmlFor="record-memo">{MEMO_LABELS[type]}</label>
           <textarea
             id="record-memo"

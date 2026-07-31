@@ -72,13 +72,14 @@ export interface ModelGroup {
   options: ModelOption[]
 }
 
-export const DEFAULT_MODEL = 'gemini-3.5-flash'
+export const DEFAULT_MODEL = 'gemini-3.6-flash'
 
 export const MODEL_GROUPS: ModelGroup[] = [
   {
     label: 'Gemini（推奨・構造化出力対応）',
     options: [
-      { value: 'gemini-3.5-flash', label: 'Gemini 3.5 Flash（最新・おすすめ）', provider: 'google' },
+      { value: 'gemini-3.6-flash', label: 'Gemini 3.6 Flash（最新・おすすめ）', provider: 'google' },
+      { value: 'gemini-3.5-flash', label: 'Gemini 3.5 Flash（旧・標準）', provider: 'google' },
       { value: 'gemini-3.1-flash-lite', label: 'Gemini 3.1 Flash-Lite（高速・軽量）', provider: 'google' },
       { value: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash（旧・標準）', provider: 'google' },
       { value: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro（旧・高品質）', provider: 'google' }
