@@ -46,4 +46,15 @@ describe('setupCode', () => {
     applySetupCode(payload)
     expect(currentSetupPayload()).toEqual(payload)
   })
+  it.each([['gemini-3.6-flash?alt=x'], ['../files'], ['gemini 3'], ['gemini#x']])(
+    '記号の入ったモデル名 %s のコードを断る',
+    (model) => {
+      expect(() => decodeSetupCode(encodeSetupCode({ ...payload, model }))).toThrow('このコードは使えません')
+    }
+  )
+
+  it('OpenRouter形式のモデル名は通す', () => {
+    const p = { provider: 'openrouter' as const, model: 'anthropic/claude-sonnet-5', apiKey: 'test-key' }
+    expect(decodeSetupCode(encodeSetupCode(p))).toEqual(p)
+  })
 })

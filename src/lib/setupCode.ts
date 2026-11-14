@@ -20,6 +20,9 @@ export interface SetupPayload {
 export class SetupCodeError extends Error {}
 
 const PREFIX = 'recoco1:'
+/** モデル名に使ってよい文字（英数字と . _ : - 、OpenRouter用の / 区切り）。送信先URLに組み込むため記号を制限する。 */
+const MODEL_PATTERN = /^[A-Za-z0-9._:-]+(\/[A-Za-z0-9._:-]+)*$/
+
 const INVALID = 'このコードは使えません。管理者からもらったQRコードをもう一度読んでください。'
 
 function toBase64Url(text: string): string {
@@ -55,6 +58,7 @@ export function decodeSetupCode(text: string): SetupPayload {
   if (v !== 1) throw new SetupCodeError(INVALID)
   if (typeof p !== 'string' || !(p in PROVIDERS)) throw new SetupCodeError(INVALID)
   if (typeof m !== 'string' || !m.trim() || typeof k !== 'string' || !k.trim()) throw new SetupCodeError(INVALID)
+  if (!MODEL_PATTERN.test(m) || m.split('/').includes('..')) throw new SetupCodeError(INVALID)
   if (getProvider(m) !== p) throw new SetupCodeError(INVALID)
   return { provider: p as Provider, model: m, apiKey: k }
 }
