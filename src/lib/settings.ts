@@ -155,6 +155,11 @@ export function migrateLegacyStorage(): void {
   }
 }
 
+/** 選択肢の一覧に載っているモデルIDかどうか。 */
+export function isKnownModel(model: string): boolean {
+  return model in MODEL_INDEX
+}
+
 /**
  * モデルIDから提供元を判定する。
  * まず登録済みモデル定義から引き、無ければIDの形からフォールバック推定する

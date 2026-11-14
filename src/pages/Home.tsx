@@ -9,15 +9,18 @@ export default function Home({ go }: { go: (v: View) => void }) {
     <>
       <Header title="recoco 記録アシスタント" />
       <div className="page">
+        {!hasKey && (
+          <div className="notice setup-notice">
+            <p>はじめに、管理者のQRコードを読み取ってください。</p>
+            <button className="btn btn-primary" onClick={() => go({ name: 'setup' })}>
+              はじめの設定をする
+            </button>
+          </div>
+        )}
+
         <div className="home-hero">
           <p>話すだけで記録の下書きができます</p>
         </div>
-
-        {!hasKey && (
-          <div className="notice">
-            はじめに<strong>設定画面でGemini APIキー</strong>を登録してください。キーがなくてもメモの入力はできますが、AIでの文章整形ができません。
-          </div>
-        )}
 
         <button className="big-action main" onClick={() => go({ name: 'form', type: 'soap' })}>
           <span className="title">記録を書く</span>

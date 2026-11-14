@@ -53,7 +53,7 @@ export default function PatientManager({ showToast }: { showToast: (m: string) =
       <label className="label">利用者の管理</label>
       {patients.length === 0 ? (
         <p className="hint" style={{ marginTop: 0 }}>
-          まだ利用者が登録されていません。記録の作成画面で「＋新規」から追加できます。
+          まだ利用者が登録されていません。記録を書く画面の「＋ 新しい利用者」から追加できます。
         </p>
       ) : (
         <div className="patient-manage-list">

@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react'
+import QRCode from 'qrcode'
 import PatientManager from '../components/PatientManager'
 import { exportBackup, importBackup } from '../lib/backup'
 import { testConnection } from '../lib/ai'
@@ -15,11 +16,17 @@ import {
   setModel,
   type Provider
 } from '../lib/settings'
-import { Header, useToast } from '../components/ui'
+import { copyText, Header, useToast } from '../components/ui'
+import { currentSetupPayload, encodeSetupCode } from '../lib/setupCode'
 
 const ALL_PROVIDERS = Object.keys(PROVIDERS) as Provider[]
 
-export default function Settings({ onBack }: { onBack: () => void }) {
+interface Props {
+  onBack: () => void
+  goSetup: () => void
+}
+
+export default function Settings({ onBack, goSetup }: Props) {
   // 全提供元のキーをまとめて保持（提供元を切り替えても入力済みキーを失わない）
   const [keys, setKeys] = useState<Record<Provider, string>>(() =>
     Object.fromEntries(ALL_PROVIDERS.map((p) => [p, getApiKey(p)])) as Record<Provider, string>
@@ -30,6 +37,8 @@ export default function Settings({ onBack }: { onBack: () => void }) {
   const [testing, setTesting] = useState(false)
   const [testResult, setTestResult] = useState<{ ok: boolean; msg: string } | null>(null)
   const [backupBusy, setBackupBusy] = useState(false)
+  const [staffQr, setStaffQr] = useState<{ image: string; code: string } | null>(null)
+  const [qrError, setQrError] = useState('')
   const fileRef = useRef<HTMLInputElement>(null)
   const [toast, showToast] = useToast()
 
@@ -78,6 +87,25 @@ export default function Settings({ onBack }: { onBack: () => void }) {
     }
   }
 
+  /** 管理者用: 今の設定を職員に渡すQRコードを作る。 */
+  const makeStaffQr = async () => {
+    persist()
+    setStaffQr(null)
+    setQrError('')
+    const payload = currentSetupPayload()
+    if (!payload) {
+      setQrError('先にAPIキーを入れて保存してください。')
+      return
+    }
+    const code = encodeSetupCode(payload)
+    try {
+      const image = await QRCode.toDataURL(code, { errorCorrectionLevel: 'M', margin: 2, width: 280 })
+      setStaffQr({ image, code })
+    } catch {
+      setQrError('QRコードを作れませんでした。もう一度押してください。')
+    }
+  }
+
   const runTest = async () => {
     persist()
     setTesting(true)
@@ -96,81 +124,8 @@ export default function Settings({ onBack }: { onBack: () => void }) {
     <>
       <Header title="設定" onBack={onBack} />
       <div className="page">
-        <div className="card">
-          <label className="label">AIモデル</label>
-          <select value={model} onChange={(e) => setModelState(e.target.value)}>
-            {MODEL_GROUPS.map((g) => (
-              <optgroup key={g.label} label={g.label}>
-                {g.options.map((m) => (
-                  <option key={m.value} value={m.value}>
-                    {m.label}
-                  </option>
-                ))}
-              </optgroup>
-            ))}
-          </select>
-          {isGemmaModel(model) && !customId.trim() && (
-            <p className="hint">
-              Gemmaは軽量なオープンモデルです。Geminiと同じAPIキーで使えますが、
-              文章の質はGeminiより落ちる場合があります。選んだら一度「接続テスト」で動作を確認してください。
-            </p>
-          )}
-          <p className="hint">
-            選択中の提供元: <strong>{meta.label}</strong>
-          </p>
-
-          <label className="label" style={{ marginTop: 12 }}>
-            {meta.label}のAPIキー
-          </label>
-          <div className="patient-row">
-            <input
-              type={showKey ? 'text' : 'password'}
-              placeholder={meta.keyPlaceholder}
-              value={currentKey}
-              onChange={(e) => setCurrentKey(e.target.value)}
-              autoComplete="off"
-            />
-            <button className="btn-small" onClick={() => setShowKey(!showKey)}>
-              {showKey ? '隠す' : '表示'}
-            </button>
-          </div>
-          <p className="hint">
-            APIキーは{' '}
-            <a href={meta.consoleUrl} target="_blank" rel="noreferrer">
-              {meta.consoleName}
-            </a>{' '}
-            で取得できます。キーはこの端末の中にだけ保存されます（提供元ごとに別々に保存されます）。
-          </p>
-
-          <details className="advanced">
-            <summary>詳細設定（カスタムモデルID）</summary>
-            <p className="hint" style={{ marginTop: 8 }}>
-              一覧にない新しいモデルを使う場合、モデルIDを直接入力できます（上の選択より優先されます）。
-              提供元は上で選んだモデルの提供元（{meta.label}）宛てに送られます。OpenRouterのモデルは
-              「provider/model」形式のIDです。空欄にすると一覧の選択に戻ります。
-            </p>
-            <input
-              type="text"
-              placeholder="例: openai/gpt-5.1 / gemini-2.5-flash など"
-              value={customId}
-              onChange={(e) => setCustomId(e.target.value)}
-              autoComplete="off"
-              style={{ marginTop: 8 }}
-            />
-          </details>
-        </div>
-
-        {testResult && (
-          <div className={testResult.ok ? 'notice' : 'error-box'} style={testResult.ok ? { background: '#f0fdf4', borderColor: '#86efac' } : undefined}>
-            {testResult.msg}
-          </div>
-        )}
-
-        <button className="btn btn-primary" onClick={save}>
-          保存
-        </button>
-        <button className="btn btn-secondary" onClick={runTest} disabled={testing || !currentKey.trim()}>
-          {testing ? '接続テスト中…' : '接続テスト'}
+        <button className="btn btn-primary" onClick={goSetup}>
+          QRコードを読み直す
         </button>
 
         <PatientManager showToast={showToast} />
@@ -208,13 +163,116 @@ export default function Settings({ onBack }: { onBack: () => void }) {
         <div className="notice">
           <strong>個人情報についての注意</strong>
           <br />
-          ・メモの内容はAI（{meta.label}）に送信されます。
-          <strong>利用者の氏名・住所・電話番号はメモに入れない</strong>でください（「Aさん」「本人」などでOK）。
+          ・話した内容はAIに送られます。
+          <strong>利用者の氏名・住所・電話番号は話さない</strong>でください（「本人」などでOK）。
           <br />
-          ・アプリで選択する利用者名はAIには送信されず、この端末の中にだけ保存されます。
+          ・アプリで選ぶ利用者名はAIには送られず、この端末の中にだけ保存されます。
           <br />
-          ・{meta.privacyNote}
+          ・無料のAIでは、送った内容がAIの改善に使われる場合があります。
         </div>
+
+        <details className="card admin-area">
+          <summary>管理者用（AIの設定）</summary>
+          <div className="card">
+            <label className="label">AIモデル</label>
+            <select value={model} onChange={(e) => setModelState(e.target.value)}>
+              {MODEL_GROUPS.map((g) => (
+                <optgroup key={g.label} label={g.label}>
+                  {g.options.map((m) => (
+                    <option key={m.value} value={m.value}>
+                      {m.label}
+                    </option>
+                  ))}
+                </optgroup>
+              ))}
+            </select>
+            {isGemmaModel(model) && !customId.trim() && (
+              <p className="hint">
+                Gemmaは軽量なオープンモデルです。Geminiと同じAPIキーで使えますが、
+                文章の質はGeminiより落ちる場合があります。選んだら一度「接続テスト」で動作を確認してください。
+              </p>
+            )}
+            <p className="hint">
+              選択中の提供元: <strong>{meta.label}</strong>
+            </p>
+
+            <label className="label" style={{ marginTop: 12 }}>
+              {meta.label}のAPIキー
+            </label>
+            <div className="patient-row">
+              <input
+                type={showKey ? 'text' : 'password'}
+                placeholder={meta.keyPlaceholder}
+                value={currentKey}
+                onChange={(e) => setCurrentKey(e.target.value)}
+                autoComplete="off"
+              />
+              <button className="btn-small" onClick={() => setShowKey(!showKey)}>
+                {showKey ? '隠す' : '表示'}
+              </button>
+            </div>
+            <p className="hint">
+              APIキーは{' '}
+              <a href={meta.consoleUrl} target="_blank" rel="noreferrer">
+                {meta.consoleName}
+              </a>{' '}
+              で取得できます。キーはこの端末の中にだけ保存されます（提供元ごとに別々に保存されます）。
+            </p>
+
+            <details className="advanced">
+              <summary>詳細設定（カスタムモデルID）</summary>
+              <p className="hint" style={{ marginTop: 8 }}>
+                一覧にない新しいモデルを使う場合、モデルIDを直接入力できます（上の選択より優先されます）。
+                提供元は上で選んだモデルの提供元（{meta.label}）宛てに送られます。OpenRouterのモデルは
+                「provider/model」形式のIDです。空欄にすると一覧の選択に戻ります。
+              </p>
+              <input
+                type="text"
+                placeholder="例: openai/gpt-5.1 / gemini-2.5-flash など"
+                value={customId}
+                onChange={(e) => setCustomId(e.target.value)}
+                autoComplete="off"
+                style={{ marginTop: 8 }}
+              />
+            </details>
+          </div>
+
+          {testResult && (
+            <div className={testResult.ok ? 'notice' : 'error-box'} style={testResult.ok ? { background: '#f0fdf4', borderColor: '#86efac' } : undefined}>
+              {testResult.msg}
+            </div>
+          )}
+
+          <button className="btn btn-primary" onClick={save}>
+            保存
+          </button>
+          <button className="btn btn-secondary" onClick={runTest} disabled={testing || !currentKey.trim()}>
+            {testing ? '接続テスト中…' : '接続テスト'}
+          </button>
+
+          <p className="hint">{meta.privacyNote}</p>
+
+          <button className="btn btn-secondary" onClick={makeStaffQr}>
+            職員用QRを作る
+          </button>
+          {qrError && <div className="error-box" role="alert">{qrError}</div>}
+          {staffQr && (
+            <div className="staff-qr">
+              <img src={staffQr.image} alt="職員用の設定QRコード" width={280} height={280} />
+              <button
+                className="btn btn-secondary"
+                onClick={async () =>
+                  showToast((await copyText(staffQr.code)) ? '設定コードをコピーしました' : 'コピーできませんでした')
+                }
+              >
+                設定コードをコピー
+              </button>
+              <div className="notice">
+                このQRコードにはAIのキーが入っています。印刷や写真での共有はせず、この画面を職員のスマホで直接読んでもらってください。
+              </div>
+            </div>
+          )}
+        </details>
       </div>
       {toast}
     </>

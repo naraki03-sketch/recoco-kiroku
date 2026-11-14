@@ -6,6 +6,7 @@ import InputForm from './pages/InputForm'
 import Result from './pages/Result'
 import History from './pages/History'
 import Settings from './pages/Settings'
+import Setup from './pages/Setup'
 import ErrorBoundary from './components/ErrorBoundary'
 
 export type View =
@@ -14,6 +15,7 @@ export type View =
   | { name: 'result'; record: RecordDoc }
   | { name: 'history' }
   | { name: 'settings' }
+  | { name: 'setup' }
 
 export default function App() {
   const [view, setView] = useState<View>(() => {
@@ -46,7 +48,10 @@ export default function App() {
             onOpen={(record) => setView({ name: 'result', record })}
           />
         )}
-        {view.name === 'settings' && <Settings onBack={() => setView({ name: 'home' })} />}
+        {view.name === 'settings' && <Settings onBack={() => setView({ name: 'home' })} goSetup={() => setView({ name: 'setup' })} />}
+        {view.name === 'setup' && (
+          <Setup onBack={() => setView({ name: 'home' })} onDone={() => setView({ name: 'home' })} />
+        )}
       </ErrorBoundary>
     </div>
   )
