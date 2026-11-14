@@ -18,6 +18,7 @@ import {
 } from '../lib/settings'
 import { copyText, Header, useToast } from '../components/ui'
 import { currentSetupPayload, encodeSetupCode } from '../lib/setupCode'
+import { checkAdminPin, getAdminPinHash, isValidPin, setAdminPin } from '../lib/adminPin'
 
 const ALL_PROVIDERS = Object.keys(PROVIDERS) as Provider[]
 
@@ -27,13 +28,17 @@ interface Props {
 }
 
 export default function Settings({ onBack, goSetup }: Props) {
-  // 全提供元のキーをまとめて保持（提供元を切り替えても入力済みキーを失わない）
-  const [keys, setKeys] = useState<Record<Provider, string>>(() =>
-    Object.fromEntries(ALL_PROVIDERS.map((p) => [p, getApiKey(p)])) as Record<Provider, string>
-  )
+  // 新しく貼ったキーだけを持つ（保存済みのキーは画面に読み込まない＝見せない）
+  const emptyKeys = () => Object.fromEntries(ALL_PROVIDERS.map((p) => [p, ''])) as Record<Provider, string>
+  const [keys, setKeys] = useState<Record<Provider, string>>(emptyKeys)
+  // 管理者用の欄の鍵。暗証番号を入れるまで中身を出さない
+  const [unlocked, setUnlocked] = useState(false)
+  const [hasPin, setHasPin] = useState(() => !!getAdminPinHash())
+  const [pin, setPin] = useState('')
+  const [pin2, setPin2] = useState('')
+  const [pinError, setPinError] = useState('')
   const [model, setModelState] = useState(getModel())
   const [customId, setCustomId] = useState(getCustomModelId())
-  const [showKey, setShowKey] = useState(false)
   const [testing, setTesting] = useState(false)
   const [testResult, setTestResult] = useState<{ ok: boolean; msg: string } | null>(null)
   const [backupBusy, setBackupBusy] = useState(false)
@@ -46,11 +51,41 @@ export default function Settings({ onBack, goSetup }: Props) {
   const meta = getProviderMeta(customId.trim() || model)
   const currentKey = keys[meta.id]
   const setCurrentKey = (v: string) => setKeys((k) => ({ ...k, [meta.id]: v }))
+  const hasSavedKey = !!getApiKey(meta.id)
 
+  /** 貼ったキーだけを保存する（空欄なら保存済みのキーをそのまま残す）。 */
   const persist = () => {
-    for (const p of ALL_PROVIDERS) setApiKey(p, keys[p])
+    for (const p of ALL_PROVIDERS) if (keys[p].trim()) setApiKey(p, keys[p])
+    setKeys(emptyKeys())
     setModel(model)
     setCustomModelId(customId)
+  }
+
+  const openAdmin = async () => {
+    setPinError('')
+    if (!(await checkAdminPin(pin))) {
+      setPinError('暗証番号が違います。')
+      return
+    }
+    setPin('')
+    setUnlocked(true)
+  }
+
+  const createPin = async () => {
+    setPinError('')
+    if (!isValidPin(pin)) {
+      setPinError('暗証番号は4〜6桁の数字にしてください。')
+      return
+    }
+    if (pin !== pin2) {
+      setPinError('同じ番号を2回入れてください。')
+      return
+    }
+    await setAdminPin(pin)
+    setPin('')
+    setPin2('')
+    setHasPin(true)
+    setUnlocked(true)
   }
 
   const save = () => {
@@ -173,6 +208,53 @@ export default function Settings({ onBack, goSetup }: Props) {
 
         <details className="card admin-area">
           <summary>管理者用（AIの設定）</summary>
+          {!unlocked ? (
+            <div className="pin-gate">
+              {hasPin ? (
+                <>
+                  <p className="hint">管理者の暗証番号を入れてください。</p>
+                  <input
+                    type="password"
+                    inputMode="numeric"
+                    autoComplete="off"
+                    aria-label="暗証番号"
+                    value={pin}
+                    onChange={(e) => setPin(e.target.value)}
+                  />
+                  <button className="btn btn-secondary" onClick={() => void openAdmin()}>
+                    開く
+                  </button>
+                </>
+              ) : (
+                <>
+                  <p className="hint">はじめに管理者の暗証番号を決めてください。職員には教えないでください。</p>
+                  <label className="label" htmlFor="new-pin">新しい暗証番号（4〜6桁の数字）</label>
+                  <input
+                    id="new-pin"
+                    type="password"
+                    inputMode="numeric"
+                    autoComplete="off"
+                    value={pin}
+                    onChange={(e) => setPin(e.target.value)}
+                  />
+                  <label className="label" htmlFor="new-pin2">もう一度</label>
+                  <input
+                    id="new-pin2"
+                    type="password"
+                    inputMode="numeric"
+                    autoComplete="off"
+                    value={pin2}
+                    onChange={(e) => setPin2(e.target.value)}
+                  />
+                  <button className="btn btn-secondary" onClick={() => void createPin()}>
+                    暗証番号を決める
+                  </button>
+                </>
+              )}
+              {pinError && <div className="error-box" role="alert">{pinError}</div>}
+            </div>
+          ) : (
+          <>
           <div className="card">
             <label className="label">AIモデル</label>
             <select value={model} onChange={(e) => setModelState(e.target.value)}>
@@ -199,18 +281,15 @@ export default function Settings({ onBack, goSetup }: Props) {
             <label className="label" style={{ marginTop: 12 }}>
               {meta.label}のAPIキー
             </label>
-            <div className="patient-row">
-              <input
-                type={showKey ? 'text' : 'password'}
-                placeholder={meta.keyPlaceholder}
-                value={currentKey}
-                onChange={(e) => setCurrentKey(e.target.value)}
-                autoComplete="off"
-              />
-              <button className="btn-small" onClick={() => setShowKey(!showKey)}>
-                {showKey ? '隠す' : '表示'}
-              </button>
-            </div>
+            {hasSavedKey && <p className="hint key-saved">設定済み（キーは表示しません。変えるときだけ新しいキーを貼ってください）</p>}
+            <input
+              type="password"
+              aria-label={`${meta.label}のAPIキー`}
+              placeholder={hasSavedKey ? '変えるときだけ貼る' : meta.keyPlaceholder}
+              value={currentKey}
+              onChange={(e) => setCurrentKey(e.target.value)}
+              autoComplete="off"
+            />
             <p className="hint">
               APIキーは{' '}
               <a href={meta.consoleUrl} target="_blank" rel="noreferrer">
@@ -246,7 +325,7 @@ export default function Settings({ onBack, goSetup }: Props) {
           <button className="btn btn-primary" onClick={save}>
             保存
           </button>
-          <button className="btn btn-secondary" onClick={runTest} disabled={testing || !currentKey.trim()}>
+          <button className="btn btn-secondary" onClick={runTest} disabled={testing || !(currentKey.trim() || hasSavedKey)}>
             {testing ? '接続テスト中…' : '接続テスト'}
           </button>
 
@@ -271,6 +350,8 @@ export default function Settings({ onBack, goSetup }: Props) {
                 このQRコードにはAIのキーが入っています。印刷や写真での共有はせず、この画面を職員のスマホで直接読んでもらってください。
               </div>
             </div>
+          )}
+          </>
           )}
         </details>
       </div>

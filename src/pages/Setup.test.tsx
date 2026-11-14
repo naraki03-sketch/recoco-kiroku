@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import Setup from './Setup'
 import { encodeSetupCode } from '../lib/setupCode'
 
-const payload = { provider: 'google' as const, model: 'gemini-3.6-flash', apiKey: 'test-key' }
+const payload = { provider: 'google' as const, model: 'gemini-3.6-flash', apiKey: 'test-key', pinHash: 'a'.repeat(64) }
 const validCode = encodeSetupCode(payload)
 
 const mocks = vi.hoisted(() => ({

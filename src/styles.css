@@ -946,3 +946,18 @@ details.admin-area[open] > summary {
   height: auto;
   background: #fff;
 }
+
+.pin-gate {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.pin-gate input {
+  font-size: 18px;
+}
+
+.key-saved {
+  color: var(--teal-dark);
+  font-weight: 600;
+}

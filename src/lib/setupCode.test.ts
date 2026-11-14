@@ -1,8 +1,10 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { applySetupCode, currentSetupPayload, decodeSetupCode, encodeSetupCode } from './setupCode'
 import { getActiveApiKey, getEffectiveModel } from './settings'
+import { getAdminPinHash } from './adminPin'
 
-const payload = { provider: 'google' as const, model: 'gemini-3.6-flash', apiKey: 'test-key' }
+const pinHash = 'a'.repeat(64)
+const payload = { provider: 'google' as const, model: 'gemini-3.6-flash', apiKey: 'test-key', pinHash }
 
 describe('setupCode', () => {
   beforeEach(() => localStorage.clear())
@@ -54,7 +56,21 @@ describe('setupCode', () => {
   )
 
   it('OpenRouter形式のモデル名は通す', () => {
-    const p = { provider: 'openrouter' as const, model: 'anthropic/claude-sonnet-5', apiKey: 'test-key' }
+    const p = { provider: 'openrouter' as const, model: 'anthropic/claude-sonnet-5', apiKey: 'test-key', pinHash }
     expect(decodeSetupCode(encodeSetupCode(p))).toEqual(p)
+  })
+  it('暗証番号のハッシュが無い・形が違うコードを断る', () => {
+    expect(() => decodeSetupCode(encodeSetupCode({ ...payload, pinHash: '' }))).toThrow('このコードは使えません')
+    expect(() => decodeSetupCode(encodeSetupCode({ ...payload, pinHash: '1234' }))).toThrow('このコードは使えません')
+  })
+
+  it('applySetupCodeは管理者の暗証番号（ハッシュ）も入れる', () => {
+    applySetupCode(payload)
+    expect(getAdminPinHash()).toBe(pinHash)
+  })
+
+  it('暗証番号が決まっていなければcurrentSetupPayloadはnull', () => {
+    localStorage.setItem('recoco.apiKey.google', 'test-key')
+    expect(currentSetupPayload()).toBeNull()
   })
 })
