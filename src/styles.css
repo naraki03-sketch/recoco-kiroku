@@ -669,3 +669,216 @@ a {
   margin: 0;
   accent-color: var(--teal);
 }
+
+/* ---------- 利用者の名前ボタン ---------- */
+.patient-buttons {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.patient-button {
+  position: relative;
+  min-height: 56px;
+  padding: 10px 12px;
+  border: 2px solid var(--border);
+  border-radius: 12px;
+  background: #fff;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1.3;
+  text-align: center;
+  word-break: break-all;
+  cursor: pointer;
+}
+
+.patient-button[aria-pressed='true'] {
+  border-color: var(--teal);
+  background: var(--teal);
+  color: #fff;
+}
+
+.patient-button.add {
+  border-style: dashed;
+  color: var(--teal);
+  font-size: 16px;
+}
+
+.draft-mark {
+  display: block;
+  margin-top: 2px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #b45309;
+}
+
+.patient-button[aria-pressed='true'] .draft-mark {
+  color: #fef3c7;
+}
+
+/* ---------- 書き方の例（畳み） ---------- */
+details.input-guide > summary {
+  cursor: pointer;
+  margin: 0;
+  list-style-position: inside;
+}
+
+details.input-guide[open] > summary {
+  margin-bottom: 10px;
+}
+
+/* ---------- ホーム（記録を書くを主役に） ---------- */
+.big-action.main {
+  min-height: 96px;
+  justify-content: center;
+}
+
+.home-sub {
+  display: flex;
+  gap: 10px;
+}
+
+.home-settings {
+  margin-top: 8px;
+}
+
+/* ---------- 文字とボタンを大きく（50〜60代の職員が読みやすい下限） ----------
+   本文17px・補足15px・主ボタン20px/高さ60px以上・入力欄18px */
+html,
+body {
+  font-size: 17px;
+}
+
+.header h1 {
+  font-size: 19px;
+}
+
+.back-btn {
+  font-size: 20px;
+  min-width: 44px;
+  min-height: 44px;
+}
+
+.label {
+  font-size: 17px;
+  color: var(--text);
+}
+
+input[type='text'],
+input[type='password'],
+input[type='date'],
+select,
+textarea {
+  font-size: 18px;
+}
+
+.btn {
+  min-height: 60px;
+  font-size: 20px;
+}
+
+.btn-ghost,
+.btn-danger-ghost {
+  min-height: 48px;
+  font-size: 17px;
+}
+
+.btn-small {
+  min-height: 44px;
+  font-size: 15px;
+}
+
+.home-hero p {
+  font-size: 17px;
+}
+
+.big-action .title {
+  font-size: 24px;
+}
+
+.big-action .desc {
+  font-size: 15px;
+}
+
+.vitals-grid .field label,
+.vitals-grid .field-label {
+  font-size: 15px;
+}
+
+.result-section .sec-title {
+  font-size: 17px;
+}
+
+.meta-line,
+.review-guidance,
+.restore-note,
+.prev-toggle,
+.memo-view .memo-edit-hint,
+.input-guide ul,
+.input-example,
+.input-guide-note {
+  font-size: 15px;
+}
+
+.input-guide-title,
+.memo-view .sec-title {
+  font-size: 17px;
+}
+
+.hint,
+.notice,
+.error-box,
+.toast {
+  font-size: 15px;
+}
+
+.auto-grow-textarea {
+  font-size: 17px;
+}
+
+/* ---------- 足りないところ・拾った数値（フェーズ2） ---------- */
+.missing-box {
+  background: var(--amber-bg);
+  border: 2px solid var(--amber-border);
+  border-radius: var(--radius);
+  padding: 14px;
+  margin-bottom: 14px;
+}
+
+.missing-box .sec-title {
+  margin: 0 0 6px;
+  font-size: 18px;
+}
+
+.missing-box ul {
+  margin: 0 0 10px;
+  padding-left: 1.2em;
+  font-size: 17px;
+  line-height: 1.6;
+}
+
+.missing-box textarea {
+  width: 100%;
+  font-size: 18px;
+  margin-bottom: 10px;
+}
+
+.vitals-line {
+  margin: 4px 0 10px;
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--teal-dark);
+}
+
+details.vitals-details > summary {
+  cursor: pointer;
+  margin: 0;
+  list-style-position: inside;
+  color: var(--teal-dark);
+}
+
+details.vitals-details[open] > summary {
+  margin-bottom: 10px;
+}

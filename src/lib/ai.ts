@@ -44,19 +44,19 @@ function parseJsonLoose(text: string): unknown {
   }
 }
 
-/** HTTPステータスから共通の日本語エラーへ変換する。 */
+/** HTTPステータスから共通の日本語エラーへ変換する（職員が読んで分かる言葉にする）。 */
 function errorForStatus(status: number, providerLabel: string): AiError {
   if (status === 400) {
-    return new AiError(`リクエストに問題があります。設定画面で${providerLabel}のモデルとAPIキーを確認してください。`)
+    return new AiError(`設定に問題があります。管理者に知らせてください。（${providerLabel}のモデルまたはキー）`)
   }
   if (status === 401 || status === 403) {
-    return new AiError(`${providerLabel}のAPIキーが正しくない可能性があります。設定画面でAPIキーを確認してください。`)
+    return new AiError(`設定に問題があります。管理者に知らせてください。（${providerLabel}のキー）`)
   }
   if (status === 404) {
-    return new AiError('選択中のAIモデルが見つかりません。設定画面で別のモデルを選んでください。')
+    return new AiError('設定に問題があります。管理者に知らせてください。（AIモデルが見つかりません）')
   }
   if (status === 429) {
-    return new AiError('利用回数の上限に達しました。しばらく待ってからもう一度お試しください。')
+    return new AiError('今AIが混み合っています。1分ほど待ってから、もう一度押してください。話した内容は消えていません。')
   }
   return new AiError(`AIの呼び出しに失敗しました（エラー ${status}）。時間をおいて再度お試しください。`)
 }
@@ -64,7 +64,7 @@ function errorForStatus(status: number, providerLabel: string): AiError {
 function requireKey(meta: ProviderMeta): string {
   const key = getApiKey(meta.id)
   if (!key) {
-    throw new AiError(`${meta.label}のAPIキーが設定されていません。設定画面からAPIキーを入力してください。`)
+    throw new AiError('まだ使う準備ができていません。管理者に設定してもらってください。')
   }
   return key
 }
@@ -83,17 +83,18 @@ function rethrowRequestError(error: unknown): never {
 export async function generateJson<T>(
   prompt: string,
   schema: JsonSchema,
-  control: RequestControl = {}
+  control: RequestControl = {},
+  allowEmpty: string[] = []
 ): Promise<T> {
   const model = getEffectiveModel()
   const meta = getProviderMeta(model)
   switch (meta.kind) {
     case 'anthropic':
-      return callAnthropic<T>(meta, model, prompt, schema, control)
+      return callAnthropic<T>(meta, model, prompt, schema, control, allowEmpty)
     case 'openai-compatible':
-      return callOpenAICompatible<T>(meta, model, prompt, schema, control)
+      return callOpenAICompatible<T>(meta, model, prompt, schema, control, allowEmpty)
     default:
-      return callGoogle<T>(meta, model, prompt, schema, control)
+      return callGoogle<T>(meta, model, prompt, schema, control, allowEmpty)
   }
 }
 
@@ -102,7 +103,8 @@ async function callGoogle<T>(
   model: string,
   prompt: string,
   schema: JsonSchema,
-  control: RequestControl
+  control: RequestControl,
+  allowEmpty: string[]
 ): Promise<T> {
   const apiKey = requireKey(meta)
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`
@@ -137,7 +139,7 @@ async function callGoogle<T>(
   if (!text) {
     throw new AiError('AIから有効な回答が得られませんでした。もう一度お試しください。')
   }
-  return validateGeneratedJson<T>(parseJsonLoose(text), schema)
+  return validateGeneratedJson<T>(parseJsonLoose(text), schema, allowEmpty)
 }
 
 async function callAnthropic<T>(
@@ -145,7 +147,8 @@ async function callAnthropic<T>(
   model: string,
   prompt: string,
   schema: JsonSchema,
-  control: RequestControl
+  control: RequestControl,
+  allowEmpty: string[]
 ): Promise<T> {
   const apiKey = requireKey(meta)
 
@@ -180,7 +183,7 @@ async function callAnthropic<T>(
   if (!text) {
     throw new AiError('AIから有効な回答が得られませんでした。もう一度お試しください。')
   }
-  return validateGeneratedJson<T>(parseJsonLoose(text), schema)
+  return validateGeneratedJson<T>(parseJsonLoose(text), schema, allowEmpty)
 }
 
 /**
@@ -193,7 +196,8 @@ async function callOpenAICompatible<T>(
   model: string,
   prompt: string,
   schema: JsonSchema,
-  control: RequestControl
+  control: RequestControl,
+  allowEmpty: string[]
 ): Promise<T> {
   const apiKey = requireKey(meta)
   const baseUrl = meta.baseUrl ?? 'https://api.openai.com/v1'
@@ -236,7 +240,7 @@ async function callOpenAICompatible<T>(
   if (!text) {
     throw new AiError('AIから有効な回答が得られませんでした。もう一度お試しください。')
   }
-  return validateGeneratedJson<T>(parseJsonLoose(text), schema)
+  return validateGeneratedJson<T>(parseJsonLoose(text), schema, allowEmpty)
 }
 
 /** 設定画面の「接続テスト」用。成功すればtrue、失敗なら日本語メッセージ付きで例外。 */

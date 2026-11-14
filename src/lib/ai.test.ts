@@ -50,4 +50,22 @@ describe('generateJson', () => {
 
     await expect(generateJson<typeof value>('test', schema)).resolves.toEqual(value)
   })
+  it('429のときは混み合っていると伝える', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('{}', { status: 429 })))
+
+    await expect(generateJson('test', schema)).rejects.toThrow('混み合っています')
+  })
+
+  it('401のときは管理者に知らせるよう伝える', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('{}', { status: 401 })))
+
+    await expect(generateJson('test', schema)).rejects.toThrow('管理者に知らせてください')
+  })
+
+  it('allowEmptyを渡すと空欄を含む応答が通る', async () => {
+    const value = { s: '', o: '所見', a: '', p: '' }
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(googleResponse(value)))
+
+    await expect(generateJson<typeof value>('test', schema, {}, ['s', 'a', 'p'])).resolves.toEqual(value)
+  })
 })

@@ -24,11 +24,7 @@ const TITLES: Record<RecordType, string> = {
   report: '訪問看護報告書'
 }
 
-const MEMO_LABELS: Record<RecordType, string> = {
-  soap: '訪問メモ（音声入力OK）',
-  plan: '計画のメモ（音声入力OK）',
-  report: '報告のメモ（音声入力OK）'
-}
+const MEMO_LABEL = '話した内容（マイク🎤で入力）'
 
 const MEMO_PLACEHOLDERS: Record<RecordType, string> = {
   soap: '例：本人から夜眠れないと訴えあり 食欲はまあまあ 下肢の浮腫やや軽減 服薬確認した 入浴介助実施 皮膚トラブルなし 次回も浮腫の観察継続…',
@@ -81,7 +77,7 @@ interface Props {
   goSettings: () => void
 }
 
-export default function InputForm({ type, onBack, onGenerated, goSettings }: Props) {
+export default function InputForm({ type, onBack, onGenerated }: Props) {
   const isSoap = type === 'soap'
   const guide = INPUT_GUIDES[type]
   const [patients, setPatients] = useState<Patient[]>([])
@@ -101,9 +97,17 @@ export default function InputForm({ type, onBack, onGenerated, goSettings }: Pro
   const refreshDraftKeys = () => setDraftKeys(new Set(Object.keys(listDrafts(type))))
   // 初回マウント時の下書き復元が終わるまで自動保存を止めるためのフラグ
   const restoredRef = useRef(false)
-  const patientSelectRef = useRef<HTMLSelectElement>(null)
+  const patientGroupRef = useRef<HTMLDivElement>(null)
+  const focusPatients = () =>
+    requestAnimationFrame(() => patientGroupRef.current?.querySelector('button')?.focus())
   const memoRef = useRef<HTMLTextAreaElement>(null)
-  const vitalsRef = useRef<HTMLDivElement>(null)
+  const vitalsRef = useRef<HTMLDetailsElement>(null)
+  const hasVitals = Object.values(vitals).some((v) => v.trim() !== '')
+  const [vitalsOpen, setVitalsOpen] = useState(false)
+  useEffect(() => {
+    // 値があるとき（下書きの復元を含む）は開いて見せる
+    if (hasVitals) setVitalsOpen(true)
+  }, [hasVitals])
   const abortRef = useRef<AbortController | null>(null)
 
   useEffect(() => {
@@ -250,8 +254,8 @@ export default function InputForm({ type, onBack, onGenerated, goSettings }: Pro
   const generate = async () => {
     setError('')
     if (patientId === '') {
-      setError('利用者を選択してください。記録の取り違えを防ぐため、利用者未選択では生成できません。')
-      requestAnimationFrame(() => patientSelectRef.current?.focus())
+      setError('だれの記録か、名前を押して選んでください。')
+      focusPatients()
       return
     }
     if (!visitDate) {
@@ -273,12 +277,12 @@ export default function InputForm({ type, onBack, onGenerated, goSettings }: Pro
     }
     const patient = patients.find((p) => p.id === patientId)
     if (!patient) {
-      setError('選択した利用者を確認できませんでした。利用者を選び直してください。')
-      requestAnimationFrame(() => patientSelectRef.current?.focus())
+      setError('選んだ利用者が見つかりませんでした。名前を押して選び直してください。')
+      focusPatients()
       return
     }
     if (!getActiveApiKey()) {
-      setError('APIキーが設定されていません。設定画面からAPIキーを入力してください。')
+      setError('まだ使う準備ができていません。管理者に設定してもらってください。')
       return
     }
     const controller = new AbortController()
@@ -306,8 +310,8 @@ export default function InputForm({ type, onBack, onGenerated, goSettings }: Pro
                 vitalsText: vitalsToText(prevRecord.vitals)
               }
             : undefined
-        const soap = await generateSoap(memo, vitals, previous, { signal: controller.signal })
-        const generated = { ...base, vitals, previousSoap: previous, soap }
+        const { soap, vitals: merged } = await generateSoap(memo, vitals, previous, { signal: controller.signal })
+        const generated = { ...base, vitals: merged, previousSoap: previous, soap }
         savePendingRecord(generated)
         onGenerated(generated)
       } else if (type === 'plan') {
@@ -346,7 +350,7 @@ export default function InputForm({ type, onBack, onGenerated, goSettings }: Pro
         )}
 
         <div className="card">
-          <label className="label" htmlFor="patient-select">利用者（必須）</label>
+          <h2 className="label" id="patient-heading">だれの記録ですか？</h2>
           {addingPatient ? (
             <div className="patient-row">
               <input
@@ -365,24 +369,23 @@ export default function InputForm({ type, onBack, onGenerated, goSettings }: Pro
               </button>
             </div>
           ) : (
-            <div className="patient-row">
-              <select
-                id="patient-select"
-                ref={patientSelectRef}
-                value={patientId}
-                onChange={(e) => changePatient(e.target.value ? Number(e.target.value) : '')}
-                required
-              >
-                <option value="">利用者を選択</option>
-                {patients.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name}
-                    {p.id != null && draftKeys.has(String(p.id)) ? '（下書きあり）' : ''}
-                  </option>
-                ))}
-              </select>
-              <button className="btn-small" type="button" onClick={() => setAddingPatient(true)}>
-                ＋新規
+            <div className="patient-buttons" role="group" aria-label="だれの記録ですか？" ref={patientGroupRef}>
+              {patients.map((p) => (
+                <button
+                  key={p.id}
+                  type="button"
+                  className="patient-button"
+                  aria-pressed={patientId === p.id}
+                  onClick={() => p.id != null && changePatient(p.id)}
+                >
+                  {p.name}
+                  {p.id != null && draftKeys.has(String(p.id)) && (
+                    <span className="draft-mark" aria-hidden="true">書きかけ</span>
+                  )}
+                </button>
+              ))}
+              <button type="button" className="patient-button add" onClick={() => setAddingPatient(true)}>
+                ＋ 新しい利用者
               </button>
             </div>
           )}
@@ -395,8 +398,13 @@ export default function InputForm({ type, onBack, onGenerated, goSettings }: Pro
         </div>
 
         {isSoap && (
-          <div className="card" ref={vitalsRef}>
-            <h2 className="label">バイタルサイン（わかる項目だけでOK）</h2>
+          <details
+            className="card vitals-details"
+            ref={vitalsRef}
+            open={vitalsOpen}
+            onToggle={(e) => setVitalsOpen(e.currentTarget.open)}
+          >
+            <summary className="label">数値を手で入れる（声で言えば不要）</summary>
             <div className="vitals-grid">
               <div className="field">
                 <label htmlFor="vital-temp">体温（℃）</label>
@@ -423,12 +431,12 @@ export default function InputForm({ type, onBack, onGenerated, goSettings }: Pro
                 <input id="vital-resp" type="text" inputMode="numeric" value={vitals.resp} onChange={(e) => setV('resp', e.target.value)} />
               </div>
             </div>
-          </div>
+          </details>
         )}
 
         <div className="card">
-          <section className="input-guide" aria-labelledby="input-guide-title">
-            <h2 id="input-guide-title" className="input-guide-title">入力する内容</h2>
+          <details className="input-guide">
+            <summary className="input-guide-title">書き方の例を見る</summary>
             <ul>
               {guide.items.map((item) => <li key={item}>{item}</li>)}
             </ul>
@@ -439,42 +447,32 @@ export default function InputForm({ type, onBack, onGenerated, goSettings }: Pro
             <p className="input-guide-note">
               全項目を埋める必要はありません。分かる範囲の事実だけを書いてください。
             </p>
-          </section>
+          </details>
 
-          <label className="label" htmlFor="record-memo">{MEMO_LABELS[type]}</label>
+          <label className="label" htmlFor="record-memo">{MEMO_LABEL}</label>
           <textarea
             id="record-memo"
             ref={memoRef}
-            rows={9}
+            rows={7}
             placeholder={MEMO_PLACEHOLDERS[type]}
             value={memo}
             onChange={(e) => setMemo(e.target.value)}
           />
           <p className="hint">
-            キーボードのマイクボタン🎤で話した内容がそのまま入ります。単語の羅列でOK。
-            氏名・住所などの個人情報はメモに入れないでください。
+            {isSoap ? '体温や血圧も、そのまま話せば入ります。氏名・住所は話さないでください。' : '氏名・住所は話さないでください。'}
           </p>
         </div>
 
         {isSoap && prevRecord && (
           <label className="prev-toggle">
             <input type="checkbox" checked={usePrev} onChange={(e) => setUsePrev(e.target.checked)} />
-            <span>
-              前回の記録（{formatDateJa(prevRecord.visitDate)}）を参考にして、経過（改善・悪化）をふまえた文章にする
-            </span>
+            <span>前回（{formatDateJa(prevRecord.visitDate)}）とくらべて書く</span>
           </label>
         )}
 
         {error && (
           <div className="error-box" role="alert" aria-live="assertive">
             {error}
-            {error.includes('APIキー') && (
-              <div style={{ marginTop: 8 }}>
-                <button className="btn-small" onClick={goSettings}>
-                  設定画面を開く
-                </button>
-              </div>
-            )}
           </div>
         )}
 
@@ -482,15 +480,15 @@ export default function InputForm({ type, onBack, onGenerated, goSettings }: Pro
           {loading ? (
             <>
               <span className="spinner" />
-              AIが文章を作成中…
+              文章を作っています…
             </>
           ) : (
-            'AIで文章にする'
+            '文章にする'
           )}
         </button>
         {loading && (
           <button className="btn btn-ghost" type="button" onClick={() => abortRef.current?.abort()}>
-            AI作成を中止
+            作成をやめる
           </button>
         )}
       </div>

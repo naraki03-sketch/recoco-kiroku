@@ -44,4 +44,11 @@ describe('importBackup identity safety', () => {
     expect(await db.patients.count()).toBe(2)
     expect(await db.records.count()).toBe(2)
   })
+  it('空欄のあるSOAPや「足りないところ」付きの記録も取り込める', async () => {
+    const data = JSON.parse(backup)
+    data.records[0].soap = { s: 'S', o: 'O', a: '', p: '', reviewWarning: 'なし', missing: 'Pが話されていません。' }
+    await expect(importBackup(JSON.stringify(data))).resolves.toEqual({ patients: 2, records: 2 })
+    const saved = await db.records.where('uuid').equals('record-a').first()
+    expect(saved?.soap).toMatchObject({ a: '', p: '', missing: 'Pが話されていません。' })
+  })
 })

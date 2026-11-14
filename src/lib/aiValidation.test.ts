@@ -35,4 +35,20 @@ describe('validateGeneratedJson', () => {
     const value = { s: '発言', o: '所見', a: '評価', p: '計画' }
     expect(validateGeneratedJson(value, soapSchema)).toEqual(value)
   })
+  it('allowEmptyに指定した項目は空文字を許す', () => {
+    const value = { s: '', o: '所見', a: '', p: '計画' }
+    expect(validateGeneratedJson(value, soapSchema, ['s', 'a'])).toEqual(value)
+  })
+
+  it('allowEmptyに無い項目の空文字は従来どおり拒否する', () => {
+    expect(() =>
+      validateGeneratedJson({ s: '', o: ' ', a: '評価', p: '計画' }, soapSchema, ['s'])
+    ).toThrow('AIの回答に空の項目があります')
+  })
+
+  it('allowEmptyでも欠落は拒否する', () => {
+    expect(() =>
+      validateGeneratedJson({ o: '所見', a: '評価', p: '計画' }, soapSchema, ['s'])
+    ).toThrow('AIの回答に必要な項目がありません')
+  })
 })

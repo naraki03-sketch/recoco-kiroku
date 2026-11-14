@@ -10,7 +10,7 @@ export default function Home({ go }: { go: (v: View) => void }) {
       <Header title="recoco 記録アシスタント" />
       <div className="page">
         <div className="home-hero">
-          <p>音声入力のメモをAIが記録文章に整形します（カイポケ転記用の下書き）</p>
+          <p>話すだけで記録の下書きができます</p>
         </div>
 
         {!hasKey && (
@@ -19,29 +19,27 @@ export default function Home({ go }: { go: (v: View) => void }) {
           </div>
         )}
 
-        <button className="big-action" onClick={() => go({ name: 'form', type: 'soap' })}>
-          <span className="title">訪問看護記録を作る</span>
-          <span className="desc">メモ＋バイタル → SOAP形式（S・O・A・P）</span>
+        <button className="big-action main" onClick={() => go({ name: 'form', type: 'soap' })}>
+          <span className="title">記録を書く</span>
+          <span className="desc">話した内容をSOAPにします</span>
         </button>
 
-        <button className="big-action alt" onClick={() => go({ name: 'form', type: 'plan' })}>
-          <span className="title">訪問看護計画書を作る</span>
-          <span className="desc">メモ → 目標・課題と支援内容・評価</span>
-        </button>
-
-        <button className="big-action alt" onClick={() => go({ name: 'form', type: 'report' })}>
-          <span className="title">訪問看護報告書を作る</span>
-          <span className="desc">メモ → 病状の経過・看護内容・介護状況・特記事項</span>
-        </button>
-
-        <div className="home-links">
-          <button className="btn btn-secondary" onClick={() => go({ name: 'history' })}>
-            履歴
+        <div className="home-sub">
+          <button className="btn btn-secondary" onClick={() => go({ name: 'form', type: 'plan' })}>
+            計画書
           </button>
-          <button className="btn btn-secondary" onClick={() => go({ name: 'settings' })}>
-            設定
+          <button className="btn btn-secondary" onClick={() => go({ name: 'form', type: 'report' })}>
+            報告書
           </button>
         </div>
+
+        <button className="btn btn-secondary" onClick={() => go({ name: 'history' })}>
+          これまでの記録
+        </button>
+
+        <button className="btn btn-ghost home-settings" onClick={() => go({ name: 'settings' })}>
+          設定
+        </button>
       </div>
     </>
   )

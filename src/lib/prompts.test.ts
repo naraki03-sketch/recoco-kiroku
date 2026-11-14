@@ -17,11 +17,10 @@ describe('medical-record prompts', () => {
 
     const [prompt, schema] = generateJson.mock.calls[0]
     expect(prompt).toContain('入力にない診断名・薬剤名・薬効・原因・因果関係')
-    expect(prompt).toContain('未確認')
     expect(prompt).toContain('推測を事実らしく書かない')
     expect(prompt).toContain('「まあまあ」などの口語・曖昧な表現をそのまま使わない')
     expect(prompt).not.toContain('利尿薬の効果')
-    expect(schema.required).toEqual(['s', 'o', 'a', 'p', 'reviewWarning'])
+    expect(schema.required).toEqual(['s', 'o', 'a', 'p', 'reviewWarning', 'missing', 'vTemp', 'vBpHigh', 'vBpLow', 'vPulse', 'vSpo2', 'vResp'])
     expect(schema.properties).not.toHaveProperty('assessmentReasoning')
   })
 
@@ -56,5 +55,37 @@ describe('medical-record prompts', () => {
     const reportSchema = generateJson.mock.calls[1][1]
     expect(reportSchema.required).toEqual(['progress', 'careContent', 'homeCare', 'notes'])
     expect(reportSchema.properties).not.toHaveProperty('reportingReasoning')
+  })
+  it('SOAPでは断り書きを文章に書かせず、missingへ出させる', async () => {
+    generateJson.mockResolvedValue({ s: '', o: 'O', a: '', p: '', reviewWarning: 'なし', missing: 'Pが話されていません。', vTemp: '', vBpHigh: '', vBpLow: '', vPulse: '', vSpo2: '', vResp: '' })
+    const { soap } = await generateSoap('下肢浮腫軽減')
+    const [prompt, , , allowEmpty] = generateJson.mock.calls[0]
+    expect(prompt).not.toContain('「未確認（')
+    expect(prompt).not.toContain('入力情報のみでは評価困難')
+    expect(prompt).toContain('空文字')
+    expect(prompt).toContain('missing')
+    expect(allowEmpty).toEqual(expect.arrayContaining(['s', 'o', 'a', 'p']))
+    expect(soap).toEqual({ s: '', o: 'O', a: '', p: '', reviewWarning: 'なし', missing: 'Pが話されていません。' })
+  })
+
+  it('声のバイタルを正規化し、手入力を優先して返す', async () => {
+    generateJson.mockResolvedValue({ s: 'S', o: 'O', a: 'A', p: 'P', reviewWarning: 'なし', missing: 'なし', vTemp: '36度5分', vBpHigh: '128', vBpLow: '76', vPulse: '', vSpo2: '', vResp: '' })
+    const { vitals } = await generateSoap('体温36度5分 血圧128の76', { temp: '37.0', bpHigh: '', bpLow: '', pulse: '', spo2: '', resp: '' })
+    expect(vitals).toEqual({ temp: '37.0', bpHigh: '128', bpLow: '76', pulse: '', spo2: '', resp: '' })
+  })
+
+  it('禁止事項（診断・薬効・原因の追加禁止）は保つ', async () => {
+    generateJson.mockResolvedValue({ s: 'S', o: 'O', a: 'A', p: 'P', reviewWarning: 'なし', missing: 'なし', vTemp: '', vBpHigh: '', vBpLow: '', vPulse: '', vSpo2: '', vResp: '' })
+    await generateSoap('本人「眠れた」')
+    const [prompt] = generateJson.mock.calls[0]
+    expect(prompt).toContain('入力にない診断名・薬剤名・薬効・原因・因果関係')
+    expect(prompt).toContain('推測で別の医学用語へ訂正しない')
+  })
+
+  it('計画書・報告書は従来どおり「未確認」を文章に書かせる', async () => {
+    generateJson.mockResolvedValueOnce({ goal: 'G', issues: 'I', evaluation: 'E' })
+    await generatePlan('自宅生活を続けたい')
+    expect(generateJson.mock.calls[0][0]).toContain('未確認（入力情報なし）')
+    expect(generateJson.mock.calls[0][0]).toContain('入力情報のみでは評価困難')
   })
 })

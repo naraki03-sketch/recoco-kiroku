@@ -80,6 +80,11 @@ function hasStrings(value: unknown, keys: string[]): boolean {
   return isObject(value) && keys.every((key) => typeof value[key] === 'string' && value[key].trim().length > 0)
 }
 
+/** SOAPは話されていない欄を空文字で持つため、空欄を許す（文字列であることだけ確かめる）。 */
+function hasStringsAllowEmpty(value: unknown, keys: string[]): boolean {
+  return isObject(value) && keys.every((key) => typeof value[key] === 'string')
+}
+
 function isVitals(value: unknown): value is Vitals {
   return isObject(value) && ['temp', 'bpHigh', 'bpLow', 'pulse', 'spo2', 'resp']
     .every((key) => typeof value[key] === 'string')
@@ -96,7 +101,7 @@ function isRecordDoc(value: unknown): value is RecordDoc {
   if (typeof value.createdAt !== 'number' || !Number.isFinite(value.createdAt)) return false
   if (typeof value.updatedAt !== 'number' || !Number.isFinite(value.updatedAt)) return false
   if (value.vitals !== undefined && !isVitals(value.vitals)) return false
-  if (type === 'soap') return hasStrings(value.soap, ['s', 'o', 'a', 'p'])
+  if (type === 'soap') return hasStringsAllowEmpty(value.soap, ['s', 'o', 'a', 'p'])
   if (type === 'plan') return hasStrings(value.plan, ['goal', 'issues', 'evaluation'])
   return hasStrings(value.report, ['progress', 'careContent', 'homeCare', 'notes'])
 }
