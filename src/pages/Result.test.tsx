@@ -8,17 +8,23 @@ const mocks = vi.hoisted(() => ({
   put: vi.fn(),
   clearPendingRecord: vi.fn(),
   clearDraft: vi.fn(),
-  generateSoap: vi.fn()
+  generateSoap: vi.fn(),
+  generateReport: vi.fn()
 }))
 
-vi.mock('../lib/db', () => ({ db: { records: { add: mocks.add, put: mocks.put } } }))
+vi.mock('../lib/db', () => ({
+  db: {
+    records: { add: mocks.add, put: mocks.put },
+    patients: { toArray: async () => [{ id: 1, name: '山田 太郎', createdAt: 1 }] }
+  }
+}))
 vi.mock('../lib/pending', () => ({
   clearPendingRecord: mocks.clearPendingRecord,
   savePendingRecord: vi.fn()
 }))
 vi.mock('../lib/draft', () => ({ clearDraft: mocks.clearDraft, patientKeyOf: (id: number | '') => String(id || 'none') }))
 vi.mock('../lib/prompts', () => ({
-  generateSoap: mocks.generateSoap, generatePlan: vi.fn(), generateReport: vi.fn()
+  generateSoap: mocks.generateSoap, generatePlan: vi.fn(), generateReport: mocks.generateReport
 }))
 
 const record: RecordDoc = {
@@ -148,5 +154,49 @@ describe('Result save safety', () => {
     fireEvent.click(screen.getByRole('button', { name: '作り直す' }))
     await waitFor(() => expect(mocks.generateSoap).toHaveBeenCalledTimes(1))
     expect(confirm).not.toHaveBeenCalled()
+  })
+})
+
+const reportRecord: RecordDoc = {
+  type: 'report', patientId: 1, patientName: '山田 太郎', visitDate: '2026-11-30',
+  memo: '【アプリの記録】\n■2026年11月5日\nO：下肢浮腫あり',
+  report: { progress: '経過', careContent: '内容', homeCare: '', notes: '', missing: '家庭での介護の状況が記録にありません。' },
+  reportBasis: { from: '2026-11-01', to: '2026-11-30', soapDates: ['2026-11-05', '2026-11-26'], pasted: true, extra: false, masked: true },
+  createdAt: 100, updatedAt: 100
+}
+
+describe('Result 報告書', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mocks.generateReport.mockResolvedValue({ progress: '経過2', careContent: '内容2', homeCare: '家族の負担あり', notes: '', missing: 'なし' })
+  })
+
+  it('期間・元にした記録・名前の置き換え・足りないところを出す', () => {
+    render(<Result record={reportRecord} onBack={vi.fn()} onSaved={vi.fn()} />)
+    expect(screen.getByText(/2026年11月1日〜2026年11月30日/)).toBeInTheDocument()
+    expect(screen.getByText('まとめた記録：11月5日・11月26日（アプリ2件）＋貼り付け')).toBeInTheDocument()
+    expect(screen.getByText('文中の利用者名を「利用者」に置き換えて送りました。家族の名前や住所が残っていないかも確かめてください。')).toBeInTheDocument()
+    expect(screen.getByRole('region', { name: '足りないところ' })).toHaveTextContent('家庭での介護の状況が記録にありません。')
+  })
+
+  it('話し足した分は名前を置き換え、見出しを付けて作り直す', async () => {
+    render(<Result record={reportRecord} onBack={vi.fn()} onSaved={vi.fn()} />)
+    fireEvent.change(screen.getByLabelText('話し足す内容'), { target: { value: '山田さんの妻が介護に疲れている' } })
+    fireEvent.click(screen.getByRole('button', { name: '話し足して作り直す' }))
+    await waitFor(() => expect(mocks.generateReport).toHaveBeenCalled())
+    const sent = mocks.generateReport.mock.calls[0][0] as string
+    expect(sent).toBe('【アプリの記録】\n■2026年11月5日\nO：下肢浮腫あり\n\n【付け足したこと】\n利用者さんの妻が介護に疲れている')
+    expect(await screen.findByDisplayValue('家族の負担あり')).toBeInTheDocument()
+  })
+
+  it('報告書の欄がすべて空ならまとめてコピーできない', () => {
+    render(
+      <Result
+        record={{ ...reportRecord, report: { progress: '', careContent: '', homeCare: '', notes: '', missing: '記録が足りません。' } }}
+        onBack={vi.fn()}
+        onSaved={vi.fn()}
+      />
+    )
+    screen.getAllByRole('button', { name: '全文をコピー（カイポケ貼り付け用）' }).forEach((button) => expect(button).toBeDisabled())
   })
 })

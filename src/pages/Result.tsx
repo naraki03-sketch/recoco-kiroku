@@ -8,6 +8,8 @@ import { clearPendingRecord, savePendingRecord } from '../lib/pending'
 import { clearDraft, patientKeyOf } from '../lib/draft'
 import { findPlaceholders, formatSoapForCopy, isSoapEmpty, parseMissing } from '../lib/soapText'
 import { validateVitals } from '../lib/clinicalValidation'
+import { maskNames } from '../lib/anonymize'
+import { describeBasis } from '../lib/reportSource'
 
 const SOAP_COPY_LABEL = '全部コピー（カイポケに貼る）'
 
@@ -85,8 +87,17 @@ export default function Result({ record: initial, onBack, onSaved }: Props) {
   const hasReviewWarning = Boolean(reviewWarning && !/^なし[。.\s]*$/.test(reviewWarning))
   const isSoap = type === 'soap' && !!record.soap
   const placeholders = isSoap ? findPlaceholders(record.soap!) : []
-  const missing = isSoap ? parseMissing(record.soap!.missing) : []
-  const soapEmpty = isSoap && isSoapEmpty(record.soap!)
+  const isReport = type === 'report' && !!record.report
+  const missing = isSoap
+    ? parseMissing(record.soap!.missing)
+    : isReport
+      ? parseMissing(record.report!.missing)
+      : []
+  const reportEmpty =
+    isReport && [record.report!.progress, record.report!.careContent, record.report!.homeCare, record.report!.notes]
+      .every((value) => !(value ?? '').trim())
+  const soapEmpty = (isSoap && isSoapEmpty(record.soap!)) || reportEmpty
+
   const vitalsText = type === 'soap' ? vitalsToText(record.vitals) : ''
   const vitalsErrors = vitalsText && record.vitals ? validateVitals(record.vitals) : []
 
@@ -169,8 +180,16 @@ export default function Result({ record: initial, onBack, onSaved }: Props) {
         const plan = await generatePlan(memo, { signal: controller.signal })
         setRecord((current) => ({ ...current, memo, plan }))
       } else {
-        const report = await generateReport(memo, { signal: controller.signal })
-        setRecord((current) => ({ ...current, memo, report }))
+        // 作り直しでも、送る前に登録名を「利用者」に置き換える
+        const names = (await db.patients.toArray()).map((p) => p.name)
+        const { text, masked } = maskNames(memo, names)
+        const report = await generateReport(text, { signal: controller.signal })
+        setRecord((current) => ({
+          ...current,
+          memo: text,
+          report,
+          reportBasis: current.reportBasis && masked ? { ...current.reportBasis, masked: true } : current.reportBasis
+        }))
       }
       setDirty(true)
       setEdited(false)
@@ -194,7 +213,15 @@ export default function Result({ record: initial, onBack, onSaved }: Props) {
     const extra = addition.trim()
     if (!extra) return
     if (edited && !confirm('手で直した文章は消えます。作り直しますか？')) return
-    if (await runGenerate(`${record.memo.trimEnd()}\n${extra}`)) setAddition('')
+    const memo = type === 'report'
+      ? `${record.memo.trimEnd()}\n\n【付け足したこと】\n${extra}`
+      : `${record.memo.trimEnd()}\n${extra}`
+    if (await runGenerate(memo)) {
+      setAddition('')
+      if (type === 'report') {
+        setRecord((current) => (current.reportBasis ? { ...current, reportBasis: { ...current.reportBasis, extra: true } } : current))
+      }
+    }
   }
 
   const save = async () => {
@@ -229,8 +256,19 @@ export default function Result({ record: initial, onBack, onSaved }: Props) {
       <main className="page" aria-busy={loading || saving}>
         <div className="meta-line">
           <span className={`badge ${DOC_META[type].badgeClass}`}>{DOC_META[type].short}</span>
-          {formatDateJa(record.visitDate)}・{record.patientName}
+          {record.reportBasis
+            ? `${formatDateJa(record.reportBasis.from)}〜${formatDateJa(record.reportBasis.to)}`
+            : formatDateJa(record.visitDate)}・{record.patientName}
         </div>
+
+        {record.reportBasis && describeBasis(record.reportBasis) && (
+          <p className="basis-line">まとめた記録：{describeBasis(record.reportBasis)}</p>
+        )}
+        {record.reportBasis?.masked && (
+          <div className="notice" role="status">
+            文中の利用者名を「利用者」に置き換えて送りました。家族の名前や住所が残っていないかも確かめてください。
+          </div>
+        )}
 
         <p className="review-guidance">
           AIが作った下書きです。元のメモと見比べて、違うところは直してください。

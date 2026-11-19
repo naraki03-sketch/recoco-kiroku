@@ -6,6 +6,8 @@ export interface FormDraft {
   visitDate: string
   vitals: Vitals
   memo: string
+  /** 報告書で貼り付けたカイポケの記録。 */
+  pasted?: string
   savedAt: number
 }
 
@@ -33,9 +35,11 @@ export function patientKeyOf(patientId: number | ''): string {
   return patientId === '' ? NONE_KEY : String(patientId)
 }
 
-/** メモが実質空の下書きは「無い」ものとして扱う。 */
+/** メモも貼り付けも実質空の下書きは「無い」ものとして扱う。 */
 function isEmptyDraft(d: FormDraft | undefined | null): boolean {
-  return !d || typeof d.memo !== 'string' || !d.memo.trim()
+  if (!d || typeof d.memo !== 'string') return true
+  const pasted = typeof d.pasted === 'string' ? d.pasted : ''
+  return !d.memo.trim() && !pasted.trim()
 }
 
 /**
@@ -115,14 +119,14 @@ export function loadDraft(type: RecordType, patientKey: string): FormDraft | nul
   return isEmptyDraft(d) ? null : d
 }
 
-/** 指定タイプ・利用者に下書きを保存する。メモが空ならそのスロットを削除。 */
+/** 指定タイプ・利用者に下書きを保存する。メモも貼り付けも空ならそのスロットを削除。 */
 export function saveDraft(
   type: RecordType,
   patientKey: string,
   draft: Omit<FormDraft, 'savedAt'>
 ): void {
   const map = readMap(type)
-  if (!draft.memo.trim()) {
+  if (isEmptyDraft({ ...draft, savedAt: 0 })) {
     delete map[patientKey]
   } else {
     map[patientKey] = { ...draft, savedAt: Date.now() }

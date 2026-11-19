@@ -51,4 +51,19 @@ describe('importBackup identity safety', () => {
     const saved = await db.records.where('uuid').equals('record-a').first()
     expect(saved?.soap).toMatchObject({ a: '', p: '', missing: 'Pが話されていません。' })
   })
+
+  it('空欄のある報告書と「何から作ったか」付きの記録も取り込める', async () => {
+    const data = JSON.parse(backup)
+    data.records[1] = {
+      ...data.records[1],
+      type: 'report',
+      soap: undefined,
+      report: { progress: '経過', careContent: '内容', homeCare: '', notes: '', missing: '家庭での介護の状況が分かりません。' },
+      reportBasis: { from: '2026-07-01', to: '2026-07-31', soapDates: ['2026-07-01'], pasted: false, extra: false, masked: false }
+    }
+    await expect(importBackup(JSON.stringify(data))).resolves.toEqual({ patients: 2, records: 2 })
+    const saved = await db.records.where('uuid').equals('record-b').first()
+    expect(saved?.report).toMatchObject({ homeCare: '', notes: '' })
+    expect(saved?.reportBasis?.soapDates).toEqual(['2026-07-01'])
+  })
 })

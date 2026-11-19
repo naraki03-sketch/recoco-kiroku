@@ -53,8 +53,21 @@ describe('medical-record prompts', () => {
     generateJson.mockResolvedValueOnce({ progress: 'P', careContent: 'C', homeCare: 'H', notes: 'N' })
     await generateReport('今月は発熱なし')
     const reportSchema = generateJson.mock.calls[1][1]
-    expect(reportSchema.required).toEqual(['progress', 'careContent', 'homeCare', 'notes'])
+    expect(reportSchema.required).toEqual(['progress', 'careContent', 'homeCare', 'notes', 'missing'])
     expect(reportSchema.properties).not.toHaveProperty('reportingReasoning')
+  })
+
+  it('報告書は複数回の記録を日付順にまとめ、足りない欄は missing で知らせる', async () => {
+    generateJson.mockResolvedValueOnce({ progress: '経過', careContent: '内容', homeCare: '', notes: '', missing: '家庭での介護の状況が分かりません。' })
+    const report = await generateReport('【アプリの記録】\n■2026年11月5日\nO：下肢浮腫あり')
+    const [prompt, , , allowEmpty] = generateJson.mock.calls[0]
+    expect(prompt).toContain('訪問日')
+    expect(prompt).toContain('同じ内容は1つにまとめる')
+    expect(prompt).toContain('■2026年11月5日')
+    expect(prompt).not.toContain('「未確認（')
+    expect(prompt).not.toContain('入力情報のみでは評価困難')
+    expect(allowEmpty).toEqual(['progress', 'careContent', 'homeCare', 'notes'])
+    expect(report.missing).toBe('家庭での介護の状況が分かりません。')
   })
   it('SOAPでは断り書きを文章に書かせず、missingへ出させる', async () => {
     generateJson.mockResolvedValue({ s: '', o: 'O', a: '', p: '', reviewWarning: 'なし', missing: 'Pが話されていません。', vTemp: '', vBpHigh: '', vBpLow: '', vPulse: '', vSpo2: '', vResp: '' })

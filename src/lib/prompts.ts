@@ -151,33 +151,51 @@ ${memo}`
   }, control)
 }
 
+/** 報告書用: 足りない情報は文章に書かせず、missing で職員に知らせる。 */
+const REPORT_UNKNOWN_AS_MISSING = `
+【足りない情報の扱い】
+- 記録に情報がない欄は空文字にする。
+- 「未確認」「要確認」「評価困難」などの断り書きを各欄の文章に書かない。
+- 代わりに missing に、足りない欄ごとに1行ずつ、職員に分かる短い文で書く（例: 「家庭での介護の状況が記録にありません。家族の様子を一言足してください。」）。
+- 足りない欄がなければ missing は「なし」とする。`
+
+const REPORT_KEYS = ['progress', 'careContent', 'homeCare', 'notes']
+
 export async function generateReport(
   memo: string,
   control: RequestControl = {}
 ): Promise<ReportResult> {
   const prompt = `あなたは主治医へ提出する訪問看護報告書の整形を補助するアシスタントです。
-対象期間の入力事実を各欄へ分類してください。入力にない期間全体の傾向や臨床判断を補わないでください。
+対象期間の訪問記録（複数回分のことがある）を読み、報告書の各欄へまとめてください。記録にない期間全体の傾向や臨床判断を補わないでください。
 ${FACT_RULES}
-${UNKNOWN_AS_TEXT}
+${REPORT_UNKNOWN_AS_MISSING}
+
+【記録のまとめ方】
+- 「■」の行は訪問日。訪問日が分かる記録は、日付の古い順に経過を書く（例: 「11月5日に下肢浮腫あり、11月26日には軽減」）。
+- 日付が分からない記録（貼り付けた記録など）は、期間中のこととして扱い、日付を推測しない。
+- 複数回に出てくる同じ内容は1つにまとめる。回数や頻度が記録から分かる場合はそれを残す。
+- 改善・悪化・不変は、同じ項目が複数の時点で記録されている場合だけ書く。
+- 記録の「S」は本人・家族の発言、「O」は観察と実施したケア、「A」は評価、「P」は今後の予定として読む。
 
 【各欄】
-- progress: 入力に明示された病状・症状・バイタルの経過。複数時点の情報がある場合だけ改善・悪化・不変を記載する。期間評価に情報が足りなければ、その旨を明記する。
-- careContent: 入力に明示された実施済みの看護・処置・指導だけ。
-- homeCare: 入力に明示された家族の介護状況・介護負担・家庭環境だけ。なければ「未確認（家庭での介護状況の入力なし）」。
-- notes: 入力に明示された主治医への伝達事項、今後の方針、連携事項だけ。なければ「未確認（特記事項の入力なし）」。
+- progress: 期間中の病状・症状・バイタルの経過。
+- careContent: 実施済みの看護・処置・指導・リハビリだけ。
+- homeCare: 家族の介護状況・介護負担・家庭環境だけ。
+- notes: 主治医への伝達事項、今後の方針、連携事項だけ。
 
-【対象期間の入力情報】
+【対象期間の記録】
 ${memo}`
 
   return generateJson<ReportResult>(prompt, {
     type: 'OBJECT',
     properties: {
-      progress: { type: 'STRING', description: '入力された対象期間の病状の経過' },
-      careContent: { type: 'STRING', description: '入力に明示された実施内容' },
-      homeCare: { type: 'STRING', description: '入力に明示された家庭での介護状況' },
-      notes: { type: 'STRING', description: '入力に明示された伝達・連携事項' }
+      progress: { type: 'STRING', description: '対象期間の病状の経過。なければ空文字' },
+      careContent: { type: 'STRING', description: '記録に明示された実施内容。なければ空文字' },
+      homeCare: { type: 'STRING', description: '記録に明示された家庭での介護状況。なければ空文字' },
+      notes: { type: 'STRING', description: '記録に明示された伝達・連携事項。なければ空文字' },
+      missing: { type: 'STRING', description: '足りない欄の案内。1欄1行。なければ「なし」' }
     },
-    required: ['progress', 'careContent', 'homeCare', 'notes'],
-    propertyOrdering: ['progress', 'careContent', 'homeCare', 'notes']
-  }, control)
+    required: [...REPORT_KEYS, 'missing'],
+    propertyOrdering: [...REPORT_KEYS, 'missing']
+  }, control, REPORT_KEYS)
 }

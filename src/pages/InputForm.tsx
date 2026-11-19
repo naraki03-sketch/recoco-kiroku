@@ -17,6 +17,8 @@ import { emptyVitals, vitalsToText } from '../lib/types'
 import { formatDateJa, Header, today } from '../components/ui'
 import { validateVitals } from '../lib/clinicalValidation'
 import { createStableId } from '../lib/id'
+import { maskNames } from '../lib/anonymize'
+import { buildReportSource, defaultPeriod, soapsInPeriod, type Period } from '../lib/reportSource'
 
 const TITLES: Record<RecordType, string> = {
   soap: '訪問看護記録（SOAP）',
@@ -25,11 +27,12 @@ const TITLES: Record<RecordType, string> = {
 }
 
 const MEMO_LABEL = '話した内容（マイク🎤で入力）'
+const REPORT_MEMO_LABEL = '付け足したいこと（話してもよい）'
 
 const MEMO_PLACEHOLDERS: Record<RecordType, string> = {
   soap: '例：本人から夜眠れないと訴えあり 食欲はまあまあ 下肢の浮腫やや軽減 服薬確認した 入浴介助実施 皮膚トラブルなし 次回も浮腫の観察継続…',
   plan: '例：本人は自宅での生活を続けたい希望 転倒リスクが高い 内服管理が不十分 家族の介護負担が大きい 週2回の訪問で状態観察と服薬支援…',
-  report: '例：今月は血圧安定 浮腫軽減し経過良好 服薬管理と入浴介助を継続 発熱なし 家族の介護負担やや大きい ケアマネと情報共有 来月も現状維持で訪問継続…'
+  report: '例：家族より介助の負担が大きいと相談あり ケアマネと情報共有した 来月も服薬支援を続ける…'
 }
 
 interface InputGuide {
@@ -79,6 +82,7 @@ interface Props {
 
 export default function InputForm({ type, onBack, onGenerated }: Props) {
   const isSoap = type === 'soap'
+  const isReport = type === 'report'
   const guide = INPUT_GUIDES[type]
   const [patients, setPatients] = useState<Patient[]>([])
   const [patientId, setPatientId] = useState<number | ''>('')
@@ -87,6 +91,17 @@ export default function InputForm({ type, onBack, onGenerated }: Props) {
   const [visitDate, setVisitDate] = useState(today())
   const [vitals, setVitals] = useState<Vitals>(emptyVitals)
   const [memo, setMemo] = useState('')
+  // 報告書: 期間・期間内のSOAP・外した記録・貼り付けた記録
+  const [period, setPeriod] = useState<Period>(() => defaultPeriod())
+  const [periodSoaps, setPeriodSoaps] = useState<RecordDoc[]>([])
+  const [excluded, setExcluded] = useState<Set<number>>(new Set())
+  const [pasted, setPasted] = useState('')
+  const [pasteOpen, setPasteOpen] = useState(false)
+  const hasPasted = pasted.trim() !== ''
+  useEffect(() => {
+    // 貼り付けがあるとき（下書きの復元を含む）は開いて見せる。空にしても勝手には閉じない
+    if (hasPasted) setPasteOpen(true)
+  }, [hasPasted])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [restoredAt, setRestoredAt] = useState<number | null>(null)
@@ -130,10 +145,29 @@ export default function InputForm({ type, onBack, onGenerated }: Props) {
   useEffect(() => {
     if (!restoredRef.current) return
     const t = window.setTimeout(() => {
-      saveDraft(type, patientKeyOf(patientId), { patientId, visitDate, vitals, memo })
+      saveDraft(type, patientKeyOf(patientId), { patientId, visitDate, vitals, memo, pasted })
     }, 400)
     return () => window.clearTimeout(t)
-  }, [type, patientId, visitDate, vitals, memo])
+  }, [type, patientId, visitDate, vitals, memo, pasted])
+
+  // 報告書のとき、選択中の利用者の期間内SOAPを読み込む
+  useEffect(() => {
+    if (type !== 'report' || patientId === '') {
+      setPeriodSoaps([])
+      return
+    }
+    let cancelled = false
+    db.records
+      .where('patientId')
+      .equals(patientId)
+      .toArray()
+      .then((rows) => {
+        if (!cancelled) setPeriodSoaps(soapsInPeriod(rows, period))
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [type, patientId, period])
 
   // SOAPのとき、選択中の利用者の「今回より前の最新SOAP記録」を経過評価用に取得する
   useEffect(() => {
@@ -164,6 +198,7 @@ export default function InputForm({ type, onBack, onGenerated }: Props) {
     setVisitDate(d.visitDate || today())
     setVitals(d.vitals ?? emptyVitals)
     setMemo(d.memo)
+    setPasted(d.pasted ?? '')
     setRestoredAt(d.savedAt)
   }
 
@@ -173,6 +208,7 @@ export default function InputForm({ type, onBack, onGenerated }: Props) {
     setVisitDate(today())
     setVitals(emptyVitals)
     setMemo('')
+    setPasted('')
     setRestoredAt(null)
   }
 
@@ -194,7 +230,7 @@ export default function InputForm({ type, onBack, onGenerated }: Props) {
     if (oldKey === newKey) return
 
     // 「選択なし（入力あり）→ 利用者」は、書いていた内容をその利用者のものとして引き継ぐ
-    if (patientId === '' && newId !== '' && memo.trim()) {
+    if (patientId === '' && newId !== '' && (memo.trim() || pasted.trim())) {
       const existing = loadDraft(type, newKey)
       if (
         existing &&
@@ -205,7 +241,7 @@ export default function InputForm({ type, onBack, onGenerated }: Props) {
         // 今の入力を引き継ぐ：noneスロットを消し、その利用者スロットへ移す
         clearDraft(type, patientKeyOf(''))
         setPatientId(newId)
-        saveDraft(type, newKey, { patientId: newId, visitDate, vitals, memo })
+        saveDraft(type, newKey, { patientId: newId, visitDate, vitals, memo, pasted })
         refreshDraftKeys()
         return
       }
@@ -215,14 +251,14 @@ export default function InputForm({ type, onBack, onGenerated }: Props) {
         applyDraft(existing, newId)
       } else {
         setPatientId(newId)
-        saveDraft(type, newKey, { patientId: newId, visitDate, vitals, memo })
+        saveDraft(type, newKey, { patientId: newId, visitDate, vitals, memo, pasted })
       }
       refreshDraftKeys()
       return
     }
 
     // 通常の切替：今の内容を旧スロットへ即時保存
-    saveDraft(type, oldKey, { patientId, visitDate, vitals, memo })
+    saveDraft(type, oldKey, { patientId, visitDate, vitals, memo, pasted })
     const existing = loadDraft(type, newKey)
     if (existing) applyDraft(existing, newId)
     else blankForm(newId)
@@ -258,11 +294,21 @@ export default function InputForm({ type, onBack, onGenerated }: Props) {
       focusPatients()
       return
     }
-    if (!visitDate) {
+    const chosenSoaps = periodSoaps.filter((r) => r.id == null || !excluded.has(r.id))
+    if (isReport) {
+      if (!period.from || !period.to || period.from > period.to) {
+        setError('期間のはじめと終わりを確かめてください。')
+        return
+      }
+      if (!chosenSoaps.length && !pasted.trim() && !memo.trim()) {
+        setError('記録を選ぶか、貼り付けるか、話してください。')
+        return
+      }
+    } else if (!visitDate) {
       setError('訪問日を入力してください。')
       return
     }
-    if (!memo.trim()) {
+    if (!isReport && !memo.trim()) {
       setError('メモを入力してください。キーボードのマイクボタンから音声入力ができます。')
       requestAnimationFrame(() => memoRef.current?.focus())
       return
@@ -320,8 +366,24 @@ export default function InputForm({ type, onBack, onGenerated }: Props) {
         savePendingRecord(generated)
         onGenerated(generated)
       } else {
-        const report = await generateReport(memo, { signal: controller.signal })
-        const generated = { ...base, report }
+        // 名前はスマホの中で「利用者」に置き換えてから送る
+        const source = buildReportSource({ soaps: chosenSoaps, pasted, extra: memo })
+        const { text, masked } = maskNames(source, patients.map((p) => p.name))
+        const report = await generateReport(text, { signal: controller.signal })
+        const generated: RecordDoc = {
+          ...base,
+          visitDate: period.to,
+          memo: text,
+          report,
+          reportBasis: {
+            from: period.from,
+            to: period.to,
+            soapDates: chosenSoaps.map((r) => r.visitDate),
+            pasted: Boolean(pasted.trim()),
+            extra: Boolean(memo.trim()),
+            masked
+          }
+        }
         savePendingRecord(generated)
         onGenerated(generated)
       }
@@ -391,11 +453,92 @@ export default function InputForm({ type, onBack, onGenerated }: Props) {
           )}
           <p className="hint">利用者名は端末内にのみ保存され、AIには送信されません。</p>
 
-          <label className="label" htmlFor="visit-date" style={{ marginTop: 12 }}>
-            訪問日
-          </label>
-          <input id="visit-date" type="date" value={visitDate} onChange={(e) => setVisitDate(e.target.value)} required />
+          {isReport ? (
+            <>
+              <span className="label" style={{ marginTop: 12 }}>期間</span>
+              <div className="period-row">
+                <input
+                  type="date"
+                  aria-label="期間のはじめ"
+                  value={period.from}
+                  onChange={(e) => setPeriod((p) => ({ ...p, from: e.target.value }))}
+                />
+                <span>〜</span>
+                <input
+                  type="date"
+                  aria-label="期間のおわり"
+                  value={period.to}
+                  onChange={(e) => setPeriod((p) => ({ ...p, to: e.target.value }))}
+                />
+              </div>
+            </>
+          ) : (
+            <>
+              <label className="label" htmlFor="visit-date" style={{ marginTop: 12 }}>
+                訪問日
+              </label>
+              <input id="visit-date" type="date" value={visitDate} onChange={(e) => setVisitDate(e.target.value)} required />
+            </>
+          )}
         </div>
+
+        {isReport && patientId !== '' && (
+          <div className="card">
+            <h2 className="label">アプリの記録から選ぶ（{periodSoaps.length}件）</h2>
+            {periodSoaps.length === 0 ? (
+              <p className="hint" style={{ marginTop: 0 }}>この期間に、アプリで保存したSOAPはありません。</p>
+            ) : (
+              <ul className="soap-pick">
+                {periodSoaps.map((r) => {
+                  const id = r.id ?? -1
+                  const summary = (r.soap?.o || r.soap?.s || r.soap?.a || r.soap?.p || '').trim()
+                  return (
+                    <li key={id}>
+                      <label>
+                        <input
+                          type="checkbox"
+                          aria-label={`${formatDateJa(r.visitDate)}の記録を使う`}
+                          checked={!excluded.has(id)}
+                          onChange={(e) =>
+                            setExcluded((current) => {
+                              const next = new Set(current)
+                              if (e.target.checked) next.delete(id)
+                              else next.add(id)
+                              return next
+                            })
+                          }
+                        />
+                        <span className="soap-pick-date">{formatDateJa(r.visitDate)}</span>
+                        <span className="soap-pick-text">{summary}</span>
+                      </label>
+                    </li>
+                  )
+                })}
+              </ul>
+            )}
+            <p className="hint">使わない日はチェックを外してください。</p>
+          </div>
+        )}
+
+        {isReport && (
+          <details
+            className="card paste-details"
+            open={pasteOpen}
+            onToggle={(e) => setPasteOpen(e.currentTarget.open)}
+          >
+            <summary className="label">カイポケの記録を貼り付けて足す</summary>
+            <p className="hint" style={{ marginTop: 0 }}>
+              名前・住所は消してから貼ってください。登録してある利用者名は「利用者」に置き換えて送ります。
+            </p>
+            <textarea
+              aria-label="カイポケの記録"
+              rows={6}
+              placeholder="カイポケの経過記録をここに貼り付けます（何件でも可）"
+              value={pasted}
+              onChange={(e) => setPasted(e.target.value)}
+            />
+          </details>
+        )}
 
         {isSoap && (
           <details
@@ -449,17 +592,21 @@ export default function InputForm({ type, onBack, onGenerated }: Props) {
             </p>
           </details>
 
-          <label className="label" htmlFor="record-memo">{MEMO_LABEL}</label>
+          <label className="label" htmlFor="record-memo">{isReport ? REPORT_MEMO_LABEL : MEMO_LABEL}</label>
           <textarea
             id="record-memo"
             ref={memoRef}
-            rows={7}
+            rows={isReport ? 4 : 7}
             placeholder={MEMO_PLACEHOLDERS[type]}
             value={memo}
             onChange={(e) => setMemo(e.target.value)}
           />
           <p className="hint">
-            {isSoap ? '体温や血圧も、そのまま話せば入ります。氏名・住所は話さないでください。' : '氏名・住所は話さないでください。'}
+            {isSoap
+              ? '体温や血圧も、そのまま話せば入ります。氏名・住所は話さないでください。'
+              : isReport
+                ? '家族の介護の様子や主治医に伝えたいことなど、記録にないことを足せます。氏名・住所は話さないでください。'
+                : '氏名・住所は話さないでください。'}
           </p>
         </div>
 
@@ -483,7 +630,7 @@ export default function InputForm({ type, onBack, onGenerated }: Props) {
               文章を作っています…
             </>
           ) : (
-            '文章にする'
+            isReport ? 'まとめて報告書をつくる' : '文章にする'
           )}
         </button>
         {loading && (

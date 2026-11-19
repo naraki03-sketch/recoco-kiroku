@@ -961,3 +961,81 @@ details.admin-area[open] > summary {
   color: var(--teal-dark);
   font-weight: 600;
 }
+
+/* ---------- 報告書のまとめ ---------- */
+/* スマホの幅では日付が切れるので、はじめ・おわりを縦に並べる */
+.period-row {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2px;
+}
+
+.period-row input {
+  width: 100%;
+}
+
+.period-row span {
+  align-self: center;
+  color: var(--text-sub);
+  line-height: 1.2;
+}
+
+.soap-pick {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.soap-pick li + li {
+  border-top: 1px solid var(--border);
+}
+
+.soap-pick label {
+  display: grid;
+  grid-template-columns: 24px auto 1fr;
+  align-items: start;
+  gap: 4px 10px;
+  padding: 10px 0;
+  cursor: pointer;
+}
+
+.soap-pick input[type='checkbox'] {
+  width: 22px;
+  height: 22px;
+  margin: 1px 0 0;
+  accent-color: var(--teal);
+}
+
+.soap-pick-date {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.soap-pick-text {
+  grid-column: 2 / -1;
+  color: var(--text-sub);
+  font-size: 15px;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+details.paste-details > summary {
+  display: list-item;
+  cursor: pointer;
+  margin: 0;
+  list-style-position: inside;
+  color: var(--teal-dark);
+}
+
+details.paste-details[open] > summary {
+  margin-bottom: 10px;
+}
+
+.basis-line {
+  margin: 0 0 10px;
+  font-size: 15px;
+  color: var(--text-sub);
+}

@@ -103,7 +103,8 @@ function isRecordDoc(value: unknown): value is RecordDoc {
   if (value.vitals !== undefined && !isVitals(value.vitals)) return false
   if (type === 'soap') return hasStringsAllowEmpty(value.soap, ['s', 'o', 'a', 'p'])
   if (type === 'plan') return hasStrings(value.plan, ['goal', 'issues', 'evaluation'])
-  return hasStrings(value.report, ['progress', 'careContent', 'homeCare', 'notes'])
+  // 報告書も足りない欄を空文字で持つため、空欄を許す
+  return hasStringsAllowEmpty(value.report, ['progress', 'careContent', 'homeCare', 'notes'])
 }
 
 function isBackup(value: unknown): value is ImportBackupData {

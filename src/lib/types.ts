@@ -54,6 +54,18 @@ export interface ReportResult {
   careContent: string // 看護・リハビリテーションの内容
   homeCare: string // 家庭での介護の状況
   notes: string // 特記すべき事項
+  /** 足りない欄の案内。改行区切り。なければ「なし」。貼り付け文には入れない。 */
+  missing?: string
+}
+
+/** 報告書を何から作ったか（結果画面の表示と作り直しのため）。 */
+export interface ReportBasis {
+  from: string // 期間の始め YYYY-MM-DD
+  to: string // 期間の終わり YYYY-MM-DD
+  soapDates: string[] // 選んだアプリ内SOAPの訪問日
+  pasted: boolean // 貼り付けた記録があるか
+  extra: boolean // 付け足しがあるか
+  masked: boolean // 利用者名を「利用者」に置き換えたか
 }
 
 export type RecordType = 'soap' | 'plan' | 'report'
@@ -72,6 +84,7 @@ export interface RecordDoc {
   soap?: SoapResult
   plan?: PlanResult
   report?: ReportResult
+  reportBasis?: ReportBasis
   createdAt: number
   updatedAt: number
 }
